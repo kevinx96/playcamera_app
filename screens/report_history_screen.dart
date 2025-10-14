@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import '../models/report_case.dart';
+import 'package:intl/intl.dart';
 import '../providers/report_provider.dart';
+import '../models/report_case.dart';
 import 'report_detail_screen.dart';
-
-import '../providers/report_detail_provider.dart'; 
+import '../providers/report_detail_provider.dart';
 
 class ReportHistoryScreen extends StatefulWidget {
   const ReportHistoryScreen({super.key});
@@ -15,188 +14,179 @@ class ReportHistoryScreen extends StatefulWidget {
 }
 
 class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
-  DateTimeRange? _selectedDateRange;
-
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
-    _selectedDateRange = DateTimeRange(
-      start: now.subtract(const Duration(days: 7)),
-      end: now,
-    );
-
+    // 画面が初期化された時にデータを取得する
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<ReportProvider>(context, listen: false)
-          .fetchReports(dateRange: _selectedDateRange);
+      context.read<ReportProvider>().fetchReports();
     });
   }
 
-  Future<void> _selectDateRange() async {
-    final newDateRange = await showDateRangePicker(
+  Future<void> _selectDateRange(BuildContext context) async {
+    final provider = context.read<ReportProvider>();
+    final initialRange =
+        provider.selectedDateRange ?? // Use existing range if available
+            DateTimeRange(
+              start: DateTime.now().subtract(const Duration(days: 7)),
+              end: DateTime.now(),
+            );
+
+    final newRange = await showDateRangePicker(
       context: context,
-      initialDateRange: _selectedDateRange,
-      firstDate: DateTime(2024),
-      lastDate: DateTime.now(),
+      firstDate: DateTime(2024), // A more reasonable start date
+      lastDate: DateTime.now(),   // Can't select future dates
+      initialDateRange: initialRange,
     );
 
-    if (newDateRange != null) {
-      setState(() {
-        _selectedDateRange = newDateRange;
-      });
-      Provider.of<ReportProvider>(context, listen: false)
-          .fetchReports(dateRange: _selectedDateRange);
+    if (newRange != null) {
+      provider.fetchReports(dateRange: newRange);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final reportProvider = context.watch<ReportProvider>();
-
-    return Column(
-      children: [
-        _buildDateSelector(context),
-        Expanded(
-          child: _buildReportList(context, reportProvider),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDateSelector(BuildContext context) {
-    final dateFormat = DateFormat('yyyy/MM/dd');
-    final String displayRange = _selectedDateRange == null
-        ? '日付を選択'
-        : '${dateFormat.format(_selectedDateRange!.start)} - ${dateFormat.format(_selectedDateRange!.end)}';
-    
-    return Card(
-      margin: const EdgeInsets.all(8.0),
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Consumer<ReportProvider>(
+      builder: (context, provider, child) {
+        return Column(
           children: [
+            _buildDateSelector(context, provider),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('期間', style: Theme.of(context).textTheme.labelSmall),
-                  Text(
-                    displayRange,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            TextButton.icon(
-              icon: const Icon(Icons.calendar_today),
-              label: const Text('変更'),
-              onPressed: _selectDateRange,
+              child: provider.isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : provider.error != null
+                      ? Center(child: Text(provider.error!))
+                      : provider.reports.isEmpty
+                          ? const Center(
+                              child: Text('指定された期間のレポートはありません。',
+                                  style: TextStyle(fontSize: 16)))
+                          : _buildReportList(provider.reports),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildReportList(BuildContext context, ReportProvider provider) {
-    if (provider.isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (provider.error != null) {
-      return Center(
-        child: Text(provider.error!, style: const TextStyle(color: Colors.red)),
-      );
-    }
-    if (provider.reports.isEmpty) {
-      return const Center(child: Text('この期間のレポートはありません。'));
-    }
-
-    return ListView.builder(
-      itemCount: provider.reports.length,
-      itemBuilder: (context, index) {
-        final reportCase = provider.reports[index];
-        return _buildCaseItem(context, reportCase);
+        );
       },
     );
   }
 
-  Widget _buildCaseItem(BuildContext context, ReportCase reportCase) {
-    final Color scoreColor = reportCase.score < 20
-        ? Colors.orange
-        : reportCase.score < 40
-            ? Colors.deepOrange
-            : Colors.red;
+  Widget _buildDateSelector(
+      BuildContext context, ReportProvider provider) {
+    final dateFormat = DateFormat('yyyy/MM/dd');
+    final range = provider.selectedDateRange ??
+        DateTimeRange(
+          start: DateTime.now().subtract(const Duration(days: 7)),
+          end: DateTime.now(),
+        );
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+    return Padding(
+      padding: const EdgeInsets.all(12.0),
       child: InkWell(
-        onTap: () {
-          // どのケースをタップしても詳細画面に遷移
-          Navigator.of(context).push(MaterialPageRoute(
-            // 詳細画面に遷移する際にProviderを渡す
-            builder: (_) => ChangeNotifierProvider(
-              create: (_) => ReportDetailProvider(),
-              child: ReportDetailScreen(caseId: reportCase.id),
-            ),
-          ));
-        },
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
+        onTap: () => _selectDateRange(context),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.2),
+                spreadRadius: 1,
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
           child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Center(
-                  child: Icon(Icons.image_not_supported_outlined, color: Colors.grey, size: 40),
-                ),
+              const Icon(Icons.calendar_today,
+                  color: Colors.blue, size: 20),
+              const SizedBox(width: 12),
+              Text(
+                '${dateFormat.format(range.start)} - ${dateFormat.format(range.end)}',
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'カテゴリ: ${reportCase.category}',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '発生時刻: ${DateFormat('yyyy/MM/dd HH:mm').format(reportCase.timestamp)}',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Column(
-                children: [
-                  Text(
-                    'スコア',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.grey.shade600),
-                  ),
-                  Text(
-                    reportCase.score.toString(),
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          color: scoreColor,
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                ],
-              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.arrow_drop_down, color: Colors.grey),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildReportList(List<ReportCase> reports) {
+    return ListView.builder(
+      itemCount: reports.length,
+      itemBuilder: (context, index) {
+        final reportCase = reports[index];
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: InkWell(
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ChangeNotifierProvider(
+                    create: (_) => ReportDetailProvider(),
+                    child: ReportDetailScreen(
+                        caseId: reportCase.id
+                            .toString()),
+                  ),
+                ),
+              );
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Row(
+                children: [
+                  // Thumbnail
+                  Container(
+                    width: 80,
+                    height: 80,
+                    color: Colors.grey[300],
+                    child: const Icon(Icons.image_not_supported,
+                        color: Colors.grey),
+                  ),
+                  const SizedBox(width: 16),
+                  // Details
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'スコア: ${reportCase.score}',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: reportCase.score < 50
+                                ? Colors.red
+                                : Colors.orange,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Chip(
+                          label: Text(reportCase.category,
+                              style: const TextStyle(fontSize: 12)),
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          DateFormat('yyyy-MM-dd HH:mm')
+                              .format(reportCase.timestamp),
+                          style:
+                              const TextStyle(color: Colors.grey, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.arrow_forward_ios, color: Colors.grey),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

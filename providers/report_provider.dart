@@ -3,75 +3,69 @@ import 'package:flutter/material.dart';
 import '../models/report_case.dart';
 
 class ReportProvider with ChangeNotifier {
-  final List<ReportCase> _allReports; 
-  List<ReportCase> _filteredReports = []; 
-  bool _isLoading = true;
+  List<ReportCase> _allReports = [];
+  List<ReportCase> _filteredReports = [];
+  bool _isLoading = false;
   String? _error;
+  DateTimeRange? _selectedDateRange;
 
   List<ReportCase> get reports => _filteredReports;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  DateTimeRange? get selectedDateRange => _selectedDateRange;
 
+  ReportProvider() {
+    _generateAllDummyReports();
+  }
 
-  ReportProvider() : _allReports = _generateDemoCases(50);
-
+  void _generateAllDummyReports() {
+    final random = Random();
+    final now = DateTime.now();
+    _allReports = List.generate(200, (index) {
+      final category = ['滑り台', 'ブランコ', 'ジャングルジム'][random.nextInt(3)];
+      final score = random.nextInt(61);
+      final timestamp = now.subtract(Duration(days: random.nextInt(365), hours: random.nextInt(24)));
+      return ReportCase(
+        id: index,
+        score: score,
+        category: category,
+        timestamp: timestamp,
+      );
+    });
+    // Sort all reports by date initially
+    _allReports.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+  }
 
   Future<void> fetchReports({DateTimeRange? dateRange}) async {
     _isLoading = true;
-    _error = null;
+    
+    // Set default date range if not provided
+    _selectedDateRange = dateRange ?? DateTimeRange(
+      start: DateTime.now().subtract(const Duration(days: 7)),
+      end: DateTime.now(),
+    );
+
     notifyListeners();
 
     try {
-      // ネットワーク通信をシミュレート
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      DateTimeRange rangeToFilter;
-      if (dateRange == null) {
-        final now = DateTime.now();
-        rangeToFilter = DateTimeRange(
-          start: now.subtract(const Duration(days: 7)),
-          end: now,
-        );
-      } else {
-        rangeToFilter = dateRange;
-      }
-
+      await Future.delayed(const Duration(milliseconds: 500)); // Simulate network delay
+      
       _filteredReports = _allReports.where((report) {
-        final inclusiveEndDate = DateTime(rangeToFilter.end.year, rangeToFilter.end.month, rangeToFilter.end.day, 23, 59, 59);
-        return report.timestamp.isAfter(rangeToFilter.start.subtract(const Duration(seconds: 1))) && 
-               report.timestamp.isBefore(inclusiveEndDate);
+        // Normalize dates to ignore time component for comparison
+        final reportDate = DateTime(report.timestamp.year, report.timestamp.month, report.timestamp.day);
+        final startDate = DateTime(_selectedDateRange!.start.year, _selectedDateRange!.start.month, _selectedDateRange!.start.day);
+        final endDate = DateTime(_selectedDateRange!.end.year, _selectedDateRange!.end.month, _selectedDateRange!.end.day);
+        
+        return !reportDate.isBefore(startDate) && !reportDate.isAfter(endDate);
       }).toList();
-
-      _filteredReports.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-
+      
+      _error = null;
     } catch (e) {
-      _error = "レポートの取得に失敗しました。";
+      _error = "レポートの取得に失敗しました: $e";
     } finally {
       _isLoading = false;
       notifyListeners();
     }
-  }
-
-  static List<ReportCase> _generateDemoCases(int count) {
-    final random = Random();
-    final categories = ['滑り台', 'ブランコ', 'ジャングルジム'];
-    
-    final now = DateTime.now();
-    final oneYearAgo = now.subtract(const Duration(days: 365));
-    final differenceInSeconds = now.difference(oneYearAgo).inSeconds;
-
-    return List.generate(count, (index) {
-      final randomSeconds = random.nextInt(differenceInSeconds);
-      final randomTimestamp = oneYearAgo.add(Duration(seconds: randomSeconds));
-
-      return ReportCase(
-        id: 100 + index,
-        score: random.nextInt(60), // 0から59までのランダムなスコア
-        timestamp: randomTimestamp,
-        category: categories[random.nextInt(categories.length)],
-        thumbnailUrl: null, // 画像は後で実装
-      );
-    });
   }
 }
 

@@ -3,93 +3,117 @@ import '../models/report_detail.dart';
 
 class ReportDetailProvider with ChangeNotifier {
   ReportDetail? _reportDetail;
-  bool _isLoading = true;
+  bool _isLoading = false;
   String? _error;
-  int _selectedImageIndex = 0;
 
-
+  String? _selectedReason;
   bool _isSubmitting = false;
-  bool _isSubmitSuccess = false;
+  bool _submissionSuccess = false;
+
+  final List<String> feedbackReasons = [
+    '人が映っていない',
+    '危険な行動がない',
+    '危険の判断に誤りがある',
+    '危険判断の種類に誤りがある',
+    '遅延が発生する／画像が破損している／画質が悪い／画像が全く合っていない'
+  ];
 
   ReportDetail? get reportDetail => _reportDetail;
   bool get isLoading => _isLoading;
   String? get error => _error;
-  int get selectedImageIndex => _selectedImageIndex;
+  String? get selectedReason => _selectedReason;
   bool get isSubmitting => _isSubmitting;
-  bool get isSubmitSuccess => _isSubmitSuccess;
+  bool get submissionSuccess => _submissionSuccess;
 
-
-  Future<void> fetchReportDetail(int caseId) async {
+  Future<void> fetchReportDetail(String caseId) async {
     _isLoading = true;
-    _error = null;
-    _isSubmitSuccess = false; 
+    // Reset submission status when fetching new detail
+    _submissionSuccess = false;
     notifyListeners();
 
     try {
-      await Future.delayed(const Duration(milliseconds: 800));
-      _reportDetail = _generateDemoDetail(caseId);
+      await Future.delayed(const Duration(milliseconds: 500));
+      _reportDetail = _getDummyReportDetail(caseId);
+      _error = null;
     } catch (e) {
-      _error = "レポート詳細の取得に失敗しました。";
+      _error = "詳細の取得に失敗しました: $e";
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
+  Future<void> submitFeedback(
+      {required String reason, required String notes}) async {
+    _isSubmitting = true;
+    notifyListeners();
 
-  void setSelectedImageIndex(int index) {
-    if (index != _selectedImageIndex) {
-      _selectedImageIndex = index;
+    try {
+      await Future.delayed(const Duration(seconds: 2));
+      print('フィードバック送信: 理由="$reason", 詳細="$notes"');
+      _submissionSuccess = true;
+    } catch (e) {
+      // Handle error
+    } finally {
+      _isSubmitting = false;
       notifyListeners();
     }
   }
 
-  // 誤検知報告を送信
-  Future<void> submitFeedback(String reason) async {
-    _isSubmitting = true;
-    notifyListeners();
-
-
-    await Future.delayed(const Duration(seconds: 2));
-
-    _isSubmitting = false;
-    _isSubmitSuccess = true;
-    notifyListeners();
+  void selectReason(String? reason) {
+    if (_selectedReason != reason) {
+      _selectedReason = reason;
+      notifyListeners();
+    }
   }
-  
 
-  ReportDetail _generateDemoDetail(int caseId) {
+  void resetFeedbackForm() {
+    _selectedReason = null;
+    _submissionSuccess = false;
+    _isSubmitting = false;
+  }
+
+  // --- Dummy Data ---
+  ReportDetail _getDummyReportDetail(String caseId) {
     return ReportDetail(
       caseId: caseId,
       category: '滑り台',
-      timestamp: DateTime(2025, 9, 25, 14, 32, 10),
+      score: 35,
+      timestamp: DateTime(2025, 9, 15, 14, 30, 10),
+      imageCount: 5,
       images: [
         ImageDetail(
-          imageId: 1001,
-          score: 45,
-          deductionItems: ["減点: 不適切な座り姿勢（腰が膝より低い）", "減点: 体が横向きの状態"],
-        ),
-        ImageDetail(
-          imageId: 1002,
+          imageId: 'slide_01',
           score: 40,
-          deductionItems: ["減点: 立ち姿勢を検出"],
+          timestamp: DateTime(2025, 9, 15, 14, 30, 8),
+          deductionItems: ['減点: 不適切な座り姿勢（腰が膝より低い）', '減点: 立ち姿勢を検出'],
         ),
         ImageDetail(
-          imageId: 1003,
+          imageId: 'slide_02',
+          score: 35,
+          timestamp: DateTime(2025, 9, 15, 14, 30, 10),
+          deductionItems: ['減点: 不適切な座り姿勢（腰が膝より低い）', '減点: 立ち姿勢を検出'],
+        ),
+        ImageDetail(
+          imageId: 'slide_03',
+          score: 55,
+          timestamp: DateTime(2025, 9, 15, 14, 30, 12),
+          deductionItems: ['減点: 体が横向きの状態', '減点: 不適切な座り姿勢（膝が伸びすぎ）'],
+        ),
+        ImageDetail(
+          imageId: 'slide_04',
           score: 20,
-          deductionItems: ["減点: 立ち乗りかつ大きく揺らす動作"],
+          timestamp: DateTime(2025, 9, 15, 14, 30, 14),
+          deductionItems: ['減点: 頭から滑る危険な動作'],
         ),
         ImageDetail(
-          imageId: 1004,
-          score: 50,
-          deductionItems: ["減点: 頭が腰より低い状態"],
-        ),
-        ImageDetail(
-          imageId: 1005,
-          score: 30,
-          deductionItems: ["減点: 頭から滑る危険な動作"],
+          imageId: 'slide_05',
+          score: 85,
+          timestamp: DateTime(2025, 9, 15, 14, 30, 16),
+          deductionItems: ['減点: 不適切な座り姿勢（膝が伸びすぎ）'],
         ),
       ],
     );
   }
 }
+
