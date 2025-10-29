@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import '../models/report_detail.dart';
 import '../providers/report_detail_provider.dart';
-import '../models/report_detail.dart'; // [FIXED] Added this import
+import '../services/api_service.dart'; // [FIX] 导入 ApiService
 
 class ReportDetailScreen extends StatefulWidget {
-  final String caseId;
+  final String caseId; // 接收 String 类型的 caseId
+
   const ReportDetailScreen({super.key, required this.caseId});
 
   @override
@@ -14,23 +16,20 @@ class ReportDetailScreen extends StatefulWidget {
 
 class _ReportDetailScreenState extends State<ReportDetailScreen> {
   final PageController _pageController = PageController();
-  int _currentImageIndex = 0;
+  int _currentPage = 0;
 
   @override
   void initState() {
     super.initState();
-    // Re-fetch details when the screen is initialized
-    // This ensures that if the provider is re-used, it shows the correct data
+    // 画面初期化時に詳細データを取得
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ReportDetailProvider>().fetchReportDetail(widget.caseId);
     });
 
     _pageController.addListener(() {
-      if (_pageController.page?.round() != _currentImageIndex) {
-        setState(() {
-          _currentImageIndex = _pageController.page!.round();
-        });
-      }
+      setState(() {
+        _currentPage = _pageController.page?.round() ?? 0;
+      });
     });
   }
 
@@ -38,112 +37,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   void dispose() {
     _pageController.dispose();
     super.dispose();
-  }
-
-  // The feedback dialog is now more complex
-  void _showFeedbackDialog(BuildContext context) {
-    final provider = context.read<ReportDetailProvider>();
-    provider.resetFeedbackForm(); // Reset form state when dialog opens
-    final notesController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return Consumer<ReportDetailProvider>(
-          builder: (context, provider, child) {
-            if (provider.submissionSuccess) {
-              return AlertDialog(
-                title: const Text('フィードバック送信完了'),
-                content:
-                    const Text('ご報告ありがとうございました。\n今後の精度向上のために活用させていただきます。'),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    child: const Text('確認'),
-                  ),
-                ],
-              );
-            }
-
-            return AlertDialog(
-              title: const Text('誤検知を報告'),
-              content: Form(
-                key: formKey,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('報告内容に最も近いものを選択してください。'),
-                      const SizedBox(height: 16),
-                      // Dropdown menu for error types
-                      DropdownButtonFormField<String>(
-                        value: provider.selectedReason,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          labelText: 'エラーの種類',
-                        ),
-                        hint: const Text('種類を選択'),
-                        items: provider.feedbackReasons
-                            .map((reason) => DropdownMenuItem(
-                                  value: reason,
-                                  child: Text(reason,
-                                      overflow: TextOverflow.ellipsis),
-                                ))
-                            .toList(),
-                        onChanged: (value) {
-                          provider.selectReason(value);
-                        },
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'エラーの種類を選択してください。';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      // Text field for supplementary notes
-                      TextFormField(
-                        controller: notesController,
-                        maxLines: 4,
-                        maxLength: 200,
-                        decoration: const InputDecoration(
-                          border: OutlineInputBorder(),
-                          labelText: '補足情報 (任意)',
-                          hintText: '具体的な状況などを入力してください。',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: provider.isSubmitting
-                  ? [const Center(child: CircularProgressIndicator())]
-                  : [
-                      TextButton(
-                        onPressed: () => Navigator.of(dialogContext).pop(),
-                        child: const Text('キャンセル'),
-                      ),
-                      ElevatedButton(
-                        onPressed: () {
-                          if (formKey.currentState!.validate()) {
-                            provider.submitFeedback(
-                              reason: provider.selectedReason!,
-                              notes: notesController.text,
-                            );
-                          }
-                        },
-                        child: const Text('送信'),
-                      ),
-                    ],
-            );
-          },
-        );
-      },
-    );
   }
 
   @override
@@ -157,26 +50,30 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
           if (provider.isLoading) {
             return const Center(child: CircularProgressIndicator());
           }
+
           if (provider.error != null) {
             return Center(child: Text(provider.error!));
           }
+
           if (provider.reportDetail == null) {
             return const Center(child: Text('レポートが見つかりません。'));
           }
 
           final report = provider.reportDetail!;
-          final currentImage = report.images[_currentImageIndex];
+          final currentImage = report.images.isNotEmpty
+              ? report.images[_currentPage]
+              : null;
 
           return Column(
             children: [
-              // Image slider section
+              // 1. 画像スライダー (画面の50%)
               Expanded(
-                flex: 1,
+                flex: 5, // 50%
                 child: _buildImageSlider(report.images),
               ),
-              // Image details section
+              // 2. 詳細情報 (画面の50%)
               Expanded(
-                flex: 1,
+                flex: 5, // 50%
                 child: _buildImageDetails(
                     context, report, currentImage, provider),
               ),
@@ -187,146 +84,338 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     );
   }
 
+  // --- Widgets ---
+
   Widget _buildImageSlider(List<ImageDetail> images) {
+  if (images.isEmpty) {
     return Container(
-      color: Colors.black,
-      child: Stack(
-        children: [
-          PageView.builder(
-            controller: _pageController,
-            itemCount: images.length,
-            itemBuilder: (context, index) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.image_not_supported,
-                        color: Colors.white, size: 100),
-                    const SizedBox(height: 16),
-                    Text('画像 ${index + 1}',
-                        style: const TextStyle(color: Colors.white)),
-                  ],
-                ),
-              );
-            },
-          ),
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(images.length, (index) {
-                  return Container(
-                    width: 8,
-                    height: 8,
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _currentImageIndex == index
-                          ? Colors.white
-                          : Colors.white54,
-                    ),
-                  );
-                }),
-              ),
-            ),
-          )
-        ],
+      color: Colors.grey[300],
+      child: const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.image_not_supported, color: Colors.grey, size: 64),
+            SizedBox(height: 16),
+            Text('関連画像がありません。', style: TextStyle(color: Colors.grey)),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildImageDetails(BuildContext context, ReportDetail report,
-      ImageDetail currentImage, ReportDetailProvider provider) {
-    final dateFormat = DateFormat('yyyy/MM/dd HH:mm:ss');
+  return PageView.builder(
+    controller: _pageController,
+    itemCount: images.length,
+    itemBuilder: (context, index) {
+      final image = images[index];
+      return Container(
+        color: Colors.black87,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // 显示网络图片
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Image.network(
+                    image.imageUrl,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Icon(Icons.broken_image, color: Colors.white, size: 100);
+                    },
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return const Center(
+                        child: CircularProgressIndicator(color: Colors.white),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // 图片标题
+              Text(
+                '画像 ${image.imageId} (デモ)',
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Image URL: ${image.imageUrl}',
+                style: const TextStyle(color: Colors.grey, fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
 
-    return Container(
-      color: Colors.grey[100],
+
+  Widget _buildImageDetails(BuildContext context, ReportDetail report,
+      ImageDetail? currentImage, ReportDetailProvider provider) {
+    if (currentImage == null) {
+      return const Center(child: Text('画像情報がありません。'));
+    }
+
+    final dateFormat = DateFormat('yyyy-MM-dd HH:mm:ss');
+    bool hasSubmitted = provider.feedbackStatus == FeedbackStatus.success;
+
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header info
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Chip(
-                label: Text(report.category),
-                backgroundColor: Colors.blue.shade100,
-              ),
-              Text(
-                '画像 ${currentImage.imageId.split('_').last} / ${report.imageCount}',
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-            ],
+          // 画像インジケーター
+          Text(
+            // [FIX] currentImage.imageId は int なので .toString() を使用
+            '画像 ${currentImage.imageId.toString()} / ${report.imageCount}',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(color: Colors.grey[700]),
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 16),
-          // Score and Time
+
+          // 情報カード
           Card(
+            elevation: 2,
             child: Padding(
               padding: const EdgeInsets.all(16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildInfoItem(context, 'スコア', '${currentImage.score}点',
-                      Colors.red.shade700),
-                  _buildInfoItem(
+                  _buildDetailRow(context, 'スコア', currentImage.score.toString(),
+                      isScore: true, score: currentImage.score),
+                  const Divider(),
+                  _buildDetailRow(
                       context, '発生時刻', dateFormat.format(currentImage.timestamp)),
+                  const Divider(),
+                  _buildDetailRow(context, 'カテゴリ', report.category),
+                  const Divider(),
+                  _buildDetailRow(
+                      context, '検知された画像数', report.imageCount.toString()),
+                  const Divider(),
+                  _buildDeductionList(context, currentImage.deductionItems),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 16),
-          // Deduction items
-          Text('検知された項目', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Expanded(
-            child: Card(
-              child: ListView.separated(
-                itemCount: currentImage.deductionItems.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  return ListTile(
-                    leading: const Icon(Icons.warning_amber_rounded,
-                        color: Colors.orange),
-                    title: Text(currentImage.deductionItems[index]),
-                  );
-                },
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          // Feedback button
+          const SizedBox(height: 24),
+
+          // フィードバックボタン
           ElevatedButton.icon(
-            onPressed: provider.submissionSuccess
-                ? null
-                : () => _showFeedbackDialog(context),
-            icon: const Icon(Icons.feedback_outlined),
-            label: const Text('誤検知を報告'),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              textStyle: Theme.of(context).textTheme.titleMedium,
+            icon: Icon(
+              hasSubmitted ? Icons.check_circle : Icons.error_outline,
             ),
-          )
+            label: Text(hasSubmitted ? 'フィードバック送信済み' : '誤検知を報告'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: hasSubmitted ? Colors.grey : Colors.red,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+            // [FIX] 既に送信成功した場合はボタンを無効化
+            onPressed: hasSubmitted
+                ? null
+                : () {
+                    // [FIX] フィードバック対象の画像IDをProviderにセット
+                    provider.prepareFeedback(currentImage.imageId);
+                    _showFeedbackDialog(context, provider, report.id.toString());
+                  },
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildInfoItem(BuildContext context, String label, String value,
-      [Color? valueColor]) {
-    return Column(
-      children: [
-        Text(label, style: Theme.of(context).textTheme.labelLarge),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: valueColor ?? Theme.of(context).colorScheme.onSurface),
-        ),
-      ],
+  // --- Feedback Dialog ---
+
+  void _showFeedbackDialog(
+      BuildContext context, ReportDetailProvider provider, String eventId) {
+    // ダイアログは自身の状態を管理するため、StatefulBuilder を使用
+    showDialog(
+      context: context,
+      barrierDismissible: provider.feedbackStatus != FeedbackStatus.loading,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            // Provider の状態をリッスン
+            final status = context.watch<ReportDetailProvider>().feedbackStatus;
+
+            if (status == FeedbackStatus.success) {
+              return AlertDialog(
+                title: const Text('フィードバック成功'),
+                content: const Text('フィードバックが正常に送信されました。'),
+                actions: [
+                  TextButton(
+                    child: const Text('確認'),
+                    onPressed: () {
+                      Navigator.of(dialogContext).pop();
+                      // Provider の状態をリセット
+                      context.read<ReportDetailProvider>().resetFeedbackState();
+                    },
+                  ),
+                ],
+              );
+            }
+
+            return AlertDialog(
+              title: const Text('誤検知を報告'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('エラーの種類を選択してください:'),
+                    DropdownButton<String>(
+                      isExpanded: true,
+                      value: provider.selectedReason,
+                      onChanged: (newValue) {
+                        provider.updateSelectedReason(newValue);
+                        // setDialogState は不要 (Provider が更新を通知するため)
+                      },
+                      items: provider.errorReasons
+                          .map<DropdownMenuItem<String>>((String value) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value, overflow: TextOverflow.ellipsis),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      maxLines: 4,
+                      maxLength: 200,
+                      decoration: const InputDecoration(
+                        labelText: '補足情報 (任意)',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (value) {
+                        provider.updateFeedbackNotes(value);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  child: const Text('キャンセル'),
+                  onPressed: status == FeedbackStatus.loading
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
+                ),
+                ElevatedButton(
+                  child: status == FeedbackStatus.loading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('送信'),
+                  onPressed: status == FeedbackStatus.loading
+                      ? null
+                      : () {
+                          // [FIX] 必要なパラメータをすべて渡す
+                          final imageId = provider.currentImageIdForFeedback;
+                          if (imageId != null) {
+                            context.read<ReportDetailProvider>().submitFeedback(
+                                  eventId: eventId,
+                                  imageId: imageId,
+                                  reason: provider.selectedReason,
+                                  notes: provider.feedbackNotes,
+                                );
+                          }
+                        },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // --- Detail Widgets ---
+
+  Widget _buildDetailRow(BuildContext context, String title, String value,
+      {bool isScore = false, int score = 0}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              title,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyLarge
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: isScore
+                  ? TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: score < 50 ? Colors.red : Colors.orange,
+                    )
+                  : Theme.of(context).textTheme.bodyLarge,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeductionList(BuildContext context, List<String> deductions) {
+    if (deductions.isEmpty) {
+      return _buildDetailRow(context, '扣分项目', 'なし');
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: 120,
+                child: Text(
+                  '扣分项目',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyLarge
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.only(left: 16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: deductions.map((item) {
+                return Text(
+                  '・ $item',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyLarge
+                      ?.copyWith(color: Colors.red[700]),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

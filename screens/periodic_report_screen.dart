@@ -1,30 +1,109 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../services/api_service.dart';
 
-// メインの画面ウィジェット
-class PeriodicReportScreen extends StatelessWidget {
+// [MODIFIED] 转换为 StatefulWidget 以管理状态
+class PeriodicReportScreen extends StatefulWidget {
   const PeriodicReportScreen({super.key});
 
+  @override
+  State<PeriodicReportScreen> createState() => _PeriodicReportScreenState();
+}
+
+class _PeriodicReportScreenState extends State<PeriodicReportScreen> {
+  // --- 状态变量 ---
+  bool _isLoading = true;
+  String? _error;
+  // 用于存储从 API G/api/reports 返回的完整 JSON 对象
+  Map<String, dynamic>? _reportData;
+
+  @override
+  void initState() {
+    super.initState();
+    // 页面加载时自动获取数据
+    _fetchReportData();
+  }
+
+  // --- 数据获取方法 ---
+  Future<void> _fetchReportData() async {
+    // 使用 Provider.of 获取由 ProxyProvider 提供的、已认证的 ApiService 实例
+    final apiService = Provider.of<ApiService>(context, listen: false);
+
+    try {
+      final data = await apiService.getPeriodicReport();
+      setState(() {
+        _reportData = data;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = "レポートの読み込みに失敗しました: ${e.toString()}";
+        _isLoading = false;
+      });
+    }
+  }
+
+  // --- 主构建方法 ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('定期レポート'),
+        actions: [
+          // 添加一个刷新按钮
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _isLoading ? null : _fetchReportData,
+          ),
+        ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildHeader(context),
-            const SizedBox(height: 24),
-            _buildModelMetrics(context),
-            const SizedBox(height: 24),
-            _buildIncidentStats(context),
-            const SizedBox(height: 24),
-            _buildModelComparisonTable(context),
-          ],
+      body: _buildBody(), // [MODIFIED] 使用 _buildBody 来处理状态
+    );
+  }
+
+  // --- 状态处理 ---
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Text(_error!,
+              style: const TextStyle(color: Colors.red, fontSize: 16),
+              textAlign: TextAlign.center),
         ),
+      );
+    }
+    if (_reportData == null || _reportData!['success'] != true) {
+      return const Center(child: Text('レポートデータを取得できませんでした。'));
+    }
+
+    // --- 数据解析 ---
+    // [MODIFIED] 从 _reportData 中解析数据
+    // 我们假设 _reportData 包含了 API 规范中定义的所有键
+    final headerData = _reportData!['dashboard_header'] as Map<String, dynamic>;
+    final metricsData = _reportData!['model_performance'] as Map<String, dynamic>;
+    final statsData = _reportData!['incident_stats'] as Map<String, dynamic>;
+    final comparisonData =
+        _reportData!['model_comparison'] as Map<String, dynamic>;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // [MODIFIED] 传递解析后的数据
+          _buildHeader(context, headerData),
+          const SizedBox(height: 24),
+          _buildModelMetrics(context, metricsData),
+          const SizedBox(height: 24),
+          _buildIncidentStats(context, statsData),
+          const SizedBox(height: 24),
+          _buildModelComparisonTable(context, comparisonData),
+        ],
       ),
     );
   }
@@ -32,7 +111,8 @@ class PeriodicReportScreen extends StatelessWidget {
   // --- 各セクションのビルドメソッド ---
 
   // ヘッダー
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(
+      BuildContext context, Map<String, dynamic> headerData) {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -46,7 +126,7 @@ class PeriodicReportScreen extends StatelessWidget {
       child: Column(
         children: [
           Text(
-            '公園内事故予測モデル 分析ダッシュボード',
+            headerData['title'] ?? '公園内事故予測モデル 分析ダッシュボード',
             style: Theme.of(context)
                 .textTheme
                 .headlineSmall
@@ -55,7 +135,8 @@ class PeriodicReportScreen extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '現在稼働中のモデル: Model-2',
+            // [MODIFIED]
+            '現在稼働中のモデル: ${headerData['current_model'] ?? 'N/A'}',
             style: Theme.of(context)
                 .textTheme
                 .titleMedium
@@ -67,32 +148,45 @@ class PeriodicReportScreen extends StatelessWidget {
   }
 
   // モデルの評価指標セクション
-  Widget _buildModelMetrics(BuildContext context) {
+  Widget _buildModelMetrics(
+      BuildContext context, Map<String, dynamic> metricsData) {
+    // [MODIFIED] 从 metricsData 解析数据
+    // 使用 .map 将 List<dynamic> 安全转换为 List<double>
+    final precision = (metricsData['precision_data'] as List)
+        .map((e) => (e as num).toDouble())
+        .toList();
+    final recall = (metricsData['recall_data'] as List)
+        .map((e) => (e as num).toDouble())
+        .toList();
+    final f1score = (metricsData['f1_score_data'] as List)
+        .map((e) => (e as num).toDouble())
+        .toList();
+
     return Column(
       children: [
         _buildChartCard(
-          context, // [FIXED] Pass context
+          context,
           title: 'モデルの適合率 (Precision)',
           chart: _buildLineChart(
-            data: [60, 90, 70, 85],
+            data: precision.isNotEmpty ? precision : [0], // [MODIFIED]
             color: Colors.blue,
           ),
         ),
         const SizedBox(height: 16),
         _buildChartCard(
-          context, // [FIXED] Pass context
+          context,
           title: 'モデルの再現率 (Recall)',
           chart: _buildLineChart(
-            data: [60, 40, 50, 70],
+            data: recall.isNotEmpty ? recall : [0], // [MODIFIED]
             color: Colors.red,
           ),
         ),
         const SizedBox(height: 16),
         _buildChartCard(
-          context, // [FIXED] Pass context
+          context,
           title: 'モデルのF1-Score',
           chart: _buildLineChart(
-            data: [60.0, 56.25, 58.33, 76.67], // 計算済みデータ
+            data: f1score.isNotEmpty ? f1score : [0], // [MODIFIED]
             color: Colors.teal,
           ),
         ),
@@ -101,7 +195,15 @@ class PeriodicReportScreen extends StatelessWidget {
   }
 
   // 事故統計セクション
-  Widget _buildIncidentStats(BuildContext context) {
+  Widget _buildIncidentStats(
+      BuildContext context, Map<String, dynamic> statsData) {
+    // [MODIFIED] 解析数据
+    final totalIncidents = statsData['total_incidents']?.toString() ?? '0';
+    final categoryData =
+        (statsData['category_distribution'] as List).cast<Map<String, dynamic>>();
+    final hourlyData =
+        (statsData['hourly_distribution'] as List).cast<Map<String, dynamic>>();
+
     return Column(
       children: [
         Row(
@@ -110,72 +212,72 @@ class PeriodicReportScreen extends StatelessWidget {
             Expanded(
               flex: 2,
               child: _buildMetricCard(
-                context, // [FIXED] Pass context
+                context,
                 label: '今月の事故発生件数',
-                value: '15',
+                value: totalIncidents, // [MODIFIED]
               ),
             ),
             const SizedBox(width: 16),
             Expanded(
               flex: 3,
               child: _buildChartCard(
-                context, // [FIXED] Pass context
+                context,
                 title: '事故の分類',
-                chart: _buildPieChart(),
+                chart: _buildPieChart(categoryData), // [MODIFIED]
               ),
             ),
           ],
         ),
         const SizedBox(height: 16),
         _buildChartCard(
-          context, // [FIXED] Pass context
+          context,
           title: '時間帯別の事故発生状況',
-          chart: _buildBarChart(),
+          chart: _buildBarChart(hourlyData), // [MODIFIED]
         ),
       ],
     );
   }
 
   // モデル比較テーブル
-  Widget _buildModelComparisonTable(BuildContext context) {
+  Widget _buildModelComparisonTable(
+      BuildContext context, Map<String, dynamic> comparisonData) {
+    // [MODIFIED] 解析数据
+    final models =
+        (comparisonData['models'] as List).cast<Map<String, dynamic>>();
+
     return _buildDashboardCard(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('最近3つのモデルのF1-Score比較',
+            Text(comparisonData['title'] ?? '最近3つのモデルのF1-Score比較',
                 style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 16),
-            _buildComparisonTableRow(
-              context,
-              modelName: 'model-prototype',
-              score: '76.32%',
-              status: '旧',
-              statusColor: Colors.grey,
-              progress: 0.7632,
-              progressColor: Colors.blueGrey,
-            ),
-            const Divider(),
-            _buildComparisonTableRow(
-              context,
-              modelName: 'model-1',
-              score: '79.87%',
-              status: '旧',
-              statusColor: Colors.grey,
-              progress: 0.7987,
-              progressColor: Colors.blue,
-            ),
-            const Divider(),
-            _buildComparisonTableRow(
-              context,
-              modelName: 'model-2',
-              score: '80.12%',
-              status: '稼働中',
-              statusColor: Colors.green,
-              progress: 0.8012,
-              progressColor: Colors.green,
-            ),
+            // [MODIFIED] 动态生成表格行
+            ...models.asMap().entries.map((entry) {
+              final model = entry.value;
+              final bool isLast = entry.key == models.length - 1;
+              final status = model['status'] ?? '旧';
+              final progress = (model['f1_score'] as num? ?? 0.0).toDouble();
+
+              return Column(
+                children: [
+                  _buildComparisonTableRow(
+                    context,
+                    modelName: model['name'] ?? 'N/A',
+                    score: '${(progress * 100).toStringAsFixed(2)}%',
+                    status: status,
+                    statusColor:
+                        status == '稼働中' ? Colors.green : Colors.grey,
+                    progress: progress,
+                    progressColor:
+                        status == '稼働中' ? Colors.green : Colors.blueGrey,
+                  ),
+                  if (!isLast) const Divider(),
+                ],
+              );
+            }),
           ],
         ),
       ),
@@ -194,9 +296,8 @@ class PeriodicReportScreen extends StatelessWidget {
   }
 
   // チャート用のカード
-  Widget _buildChartCard(BuildContext context, // [FIXED] Accept context
-      {required String title,
-      required Widget chart}) {
+  Widget _buildChartCard(BuildContext context,
+      {required String title, required Widget chart}) {
     return _buildDashboardCard(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -212,9 +313,8 @@ class PeriodicReportScreen extends StatelessWidget {
   }
 
   // 数値表示用のカード
-  Widget _buildMetricCard(BuildContext context, // [FIXED] Accept context
-      {required String label,
-      required String value}) {
+  Widget _buildMetricCard(BuildContext context,
+      {required String label, required String value}) {
     return _buildDashboardCard(
       child: Container(
         height: 264, // PieChartの高さに合わせる
@@ -335,43 +435,33 @@ class PeriodicReportScreen extends StatelessWidget {
   }
 
   // 円グラフ
-  Widget _buildPieChart() {
+  Widget _buildPieChart(List<Map<String, dynamic>> data) {
+    if (data.isEmpty) return const Center(child: Text('データがありません'));
+
     return PieChart(
       PieChartData(
         sectionsSpace: 4,
         centerSpaceRadius: 40,
-        sections: [
-          PieChartSectionData(
-              value: 40,
-              title: '40%',
-              color: Colors.purple,
+        // [MODIFIED] 动态生成饼图
+        sections: data.map((item) {
+          final value = (item['value'] as num? ?? 0.0).toDouble();
+          return PieChartSectionData(
+              value: value,
+              title: '${value.toStringAsFixed(0)}%', // API が % を返すと仮定
+              color: _getColorForCategory(item['label'] ?? ''), // ヘルパーで色を決定
               radius: 50,
-              titleStyle: const TextStyle(fontWeight: FontWeight.bold)),
-          PieChartSectionData(
-              value: 33.3,
-              title: '33%',
-              color: Colors.orange,
-              radius: 50,
-              titleStyle: const TextStyle(fontWeight: FontWeight.bold)),
-          PieChartSectionData(
-              value: 20,
-              title: '20%',
-              color: Colors.teal,
-              radius: 50,
-              titleStyle: const TextStyle(fontWeight: FontWeight.bold)),
-          PieChartSectionData(
-              value: 6.7,
-              title: '7%',
-              color: Colors.grey,
-              radius: 50,
-              titleStyle: const TextStyle(fontWeight: FontWeight.bold)),
-        ],
+              titleStyle: const TextStyle(fontWeight: FontWeight.bold));
+        }).toList(),
       ),
     );
   }
 
   // 棒グラフ
-  Widget _buildBarChart() {
+  Widget _buildBarChart(List<Map<String, dynamic>> data) {
+    if (data.isEmpty) return const Center(child: Text('データがありません'));
+
+    final labels = data.map((item) => item['label'] as String? ?? '').toList();
+
     return BarChart(
       BarChartData(
         alignment: BarChartAlignment.spaceAround,
@@ -380,10 +470,15 @@ class PeriodicReportScreen extends StatelessWidget {
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              getTitlesWidget: (value, meta) => Text(
-                ['12-14時', '14-16時', '16-18時'][value.toInt()],
-                style: const TextStyle(fontSize: 12),
-              ),
+              getTitlesWidget: (value, meta) {
+                final index = value.toInt();
+                if (index < 0 || index >= labels.length) return Container();
+                // [MODIFIED] 动态设置标签
+                return Text(
+                  labels[index].replaceAll('時', ''), // '12-14時' -> '12-14'
+                  style: const TextStyle(fontSize: 10),
+                );
+              },
               reservedSize: 30,
             ),
           ),
@@ -392,19 +487,45 @@ class PeriodicReportScreen extends StatelessWidget {
           rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
         borderData: FlBorderData(show: false),
-        barGroups: [
-          BarChartGroupData(x: 0, barRods: [
-            BarChartRodData(toY: 4, color: Colors.amber, width: 20)
-          ]),
-          BarChartGroupData(x: 1, barRods: [
-            BarChartRodData(toY: 4, color: Colors.blue, width: 20)
-          ]),
-          BarChartGroupData(x: 2, barRods: [
-            BarChartRodData(toY: 7, color: Colors.red, width: 20)
-          ]),
-        ],
+        // [MODIFIED] 动态生成柱状图
+        barGroups: data.asMap().entries.map((entry) {
+          final index = entry.key;
+          final item = entry.value;
+          final value = (item['value'] as num? ?? 0.0).toDouble();
+          return BarChartGroupData(x: index, barRods: [
+            BarChartRodData(
+                toY: value,
+                color: _getColorForCategory(item['label'] ?? '', index),
+                width: 20)
+          ]);
+        }).toList(),
       ),
     );
+  }
+
+  // [ADDED] 动态颜色的辅助函数
+  Color _getColorForCategory(String category, [int index = 0]) {
+    switch (category.toLowerCase()) {
+      case 'slide':
+      case '滑り台':
+        return Colors.purple;
+      case 'swing':
+      case 'ブランコ':
+        return Colors.orange;
+      case 'junglegym':
+      case 'ジャングルジム':
+        return Colors.teal;
+      default:
+        // 棒グラフや円グラフのフォールバック
+        final colors = [
+          Colors.amber,
+          Colors.blue,
+          Colors.red,
+          Colors.green,
+          Colors.purple
+        ];
+        return colors[index % colors.length];
+    }
   }
 }
 
