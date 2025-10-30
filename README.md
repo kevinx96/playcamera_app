@@ -133,4 +133,4 @@ flutter run -v
 
 ---
 
-If you want additional sections (examples of expected HLS file layout, sample IMAGE_BASE_URL values, or a troubleshooting checklist), tell me which section to add and I will include it.
+
