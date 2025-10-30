@@ -1,0 +1,3054 @@
+camera.dart:
+class Camera {
+  final int id;
+  final String name;
+  final String status;
+
+  Camera({
+    required this.id,
+    required this.name,
+    required this.status,
+  });
+
+  // fromJson 构造函数，用于将 API 返回的 JSON (Map) 转换为 Camera 对象
+  factory Camera.fromJson(Map<String, dynamic> json) {
+    return Camera(
+      id: json['id'] as int,
+      name: json['name'] as String,
+      // [FIX] 确保 status 字段被解析，并提供一个默认值
+      status: json['status'] as String? ?? 'offline', 
+    );
+  }
+}
+
+report_case.dart:
+import 'package:intl/intl.dart'; // [NEW] 导入 intl 包
+
+class ReportCase {
+  final int id;
+  final int cameraId;
+  final String equipmentType; // [MODIFIED] 从 category 改为 equipmentType
+  final int score;
+  final String thumbnailUrl;
+  final String status;
+  final DateTime eventTime; // [MODIFIED] 从 timestamp 改为 eventTime
+
+  ReportCase({
+    required this.id,
+    required this.cameraId,
+    required this.equipmentType, // [MODIFIED]
+    required this.score,
+    required this.thumbnailUrl,
+    required this.status,
+    required this.eventTime, // [MODIFIED]
+  });
+
+  factory ReportCase.fromJson(Map<String, dynamic> json) {
+    String dateString = json['event_time'] as String? ?? '';
+    DateTime parsedDate;
+
+    try {
+      // [FIXED] 尝试解析 RFC 1123 格式 (e.g., "Mon, 27 Oct 2025 22:48:30 GMT")
+      // 注意：HttpDate.parse() 更健壮，但需要 dart:io 导入，模型中不推荐
+      // 我们使用 intl 的 DateFormat
+      parsedDate = DateFormat("E, dd MMM yyyy HH:mm:ss 'GMT'").parseUtc(dateString);
+    } catch (e) {
+      try {
+        // 如果 RFC 1123 失败，尝试解析 ISO 8601 (备用方案)
+        parsedDate = DateTime.parse(dateString);
+      } catch (e2) {
+        // 如果都失败，使用当前时间或一个默认时间
+        print("⚠️ Failed to parse date: $dateString. Error: $e and $e2");
+        parsedDate = DateTime.now(); // 或者 DateTime(1970)
+      }
+    }
+
+    return ReportCase(
+      id: json['id'] as int,
+      cameraId: json['camera_id'] as int? ?? 0,
+      equipmentType: json['equipment_type'] as String? ?? '不明', // [MODIFIED]
+      score: json['score'] as int? ?? 0,
+      thumbnailUrl: json['thumbnail_url'] as String? ?? '', // [MODIFIED] 使用后端别名
+      status: json['status'] as String? ?? '不明',
+      eventTime: parsedDate, // [MODIFIED] 使用解析后的日期
+    );
+  }
+}
+report_detail.dart:
+import 'package:flutter/foundation.dart';
+
+// 对应 GET /api/events/{id} 返回的 data 对象
+class ReportDetail {
+  final int id;
+  final int cameraId;
+  final String category;
+  final int score;
+  final DateTime timestamp;
+  final int imageCount;
+  final List<ImageDetail> images;
+
+  ReportDetail({
+    required this.id,
+    required this.cameraId,
+    required this.category,
+    required this.score,
+    required this.timestamp,
+    required this.imageCount,
+    required this.images,
+  });
+
+  // [FIX] 添加 fromJson 工厂构造函数
+  factory ReportDetail.fromJson(Map<String, dynamic> json) {
+    var imagesList = json['images'] as List? ?? [];
+    List<ImageDetail> parsedImages = imagesList
+        .map((i) => ImageDetail.fromJson(i as Map<String, dynamic>))
+        .toList();
+
+    return ReportDetail(
+      id: json['id'] as int,
+      cameraId: json['camera_id'] as int? ?? 0,
+      category: json['category'] as String? ?? '不明',
+      score: json['score'] as int? ?? 0,
+      timestamp: DateTime.parse(json['timestamp'] as String? ?? ''),
+      imageCount: json['image_count'] as int? ?? 0,
+      images: parsedImages,
+    );
+  }
+}
+
+// 对应 ReportDetail.images 列表中的单个图片对象
+class ImageDetail {
+  final int imageId;
+  final String imageUrl;
+  final DateTime timestamp;
+  final int score;
+  final List<String> deductionItems;
+
+  ImageDetail({
+    required this.imageId,
+    required this.imageUrl,
+    required this.timestamp,
+    required this.score,
+    required this.deductionItems,
+  });
+
+  // [FIX] 添加 fromJson 工厂构造函数
+  factory ImageDetail.fromJson(Map<String, dynamic> json) {
+    var deductionsList = json['deduction_items'] as List? ?? [];
+    List<String> parsedDeductions =
+        deductionsList.map((item) => item.toString()).toList();
+
+    return ImageDetail(
+      imageId: json['image_id'] as int,
+      imageUrl: json['image_url'] as String? ?? '',
+      timestamp: DateTime.parse(json['timestamp'] as String? ?? ''),
+      score: json['score'] as int? ?? 0,
+      deductionItems: parsedDeductions,
+    );
+  }
+}
+
+user.dart:
+class User {
+  final int id;
+  final String username;
+  final String email;
+  final String fullName;
+  final String role;
+  // final DateTime createdAt; // 您的 API JSON 中不包含此项，暂时注释
+
+  User({
+    required this.id,
+    required this.username,
+    required this.email,
+    required this.fullName,
+    required this.role,
+    // required this.createdAt,
+  });
+
+  // Factory constructor to parse JSON
+  factory User.fromJson(Map<String, dynamic> json) {
+    return User(
+      // 我们的 API 返回 'user_id'，但Dart习惯用'id'
+      id: json['user_id'] ?? json['id'], 
+      username: json['username'],
+      email: json['email'],
+      fullName: json['full_name'],
+      role: json['role'],
+      // createdAt: DateTime.parse(json['created_at']),
+    );
+  }
+}
+
+auth_provider.dart:
+import 'package:flutter/material.dart';
+import 'dart:developer' as developer; // [NEW] 导入 developer 库用于更详细的日志
+import '../models/user.dart';
+import '../services/api_service.dart';
+
+class AuthProvider with ChangeNotifier {
+  User? _user;
+  String? _token;
+  bool _isLoading = false;
+  String? _error;
+
+  User? get user => _user;
+  String? get token => _token;
+  bool get isLoading => _isLoading;
+  String? get error => _error;
+  bool get isAuthenticated => _token != null;
+
+  // [REMOVED] ApiService 实例将由 ProxyProvider 注入
+  // final ApiService _apiService = ApiService(null);
+
+  Future<bool> login(String username, String password) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    // 登录时临时创建一个 ApiService 实例 (不需要 token)
+    final tempApiService = ApiService(null);
+
+    try {
+      developer.log('Attempting login for user: $username', name: 'AuthProvider.login'); // [NEW LOG]
+      final response = await tempApiService.login(username, password);
+      developer.log('Login API response received: $response', name: 'AuthProvider.login'); // [NEW LOG]
+
+      _token = response['token'];
+      _user = User.fromJson(response['user']);
+
+      // [REMOVED] 不再需要 setToken
+      // _apiService.setToken(_token!);
+
+      _isLoading = false;
+      developer.log('Login successful. Token set. Notifying listeners.', name: 'AuthProvider.login'); // [NEW LOG]
+      notifyListeners(); // 此时 _token 已经更新，ProxyProvider 会检测到
+      return true;
+
+    } catch (e, stackTrace) { // [MODIFIED] 捕获堆栈跟踪
+      // [MODIFIED] 添加详细的错误日志
+      _error = "ログインに失敗しました: ${e.toString()}";
+      _isLoading = false;
+      // **** 这里添加了更详细的日志 ****
+      developer.log(
+        'Login failed!', 
+        name: 'AuthProvider.login', 
+        error: e, 
+        stackTrace: stackTrace
+      ); 
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> register({
+    required String username,
+    required String password,
+    required String email,
+    required String fullName,
+  }) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    // 注册时临时创建一个 ApiService 实例 (不需要 token)
+    final tempApiService = ApiService(null);
+
+    try {
+      developer.log('Attempting registration for user: $username', name: 'AuthProvider.register'); // [NEW LOG]
+      final response = await tempApiService.register(
+        username: username,
+        password: password,
+        email: email,
+        fullName: fullName,
+      );
+      developer.log('Register API response received: $response', name: 'AuthProvider.register'); // [NEW LOG]
+
+      // 注册成功后，通常不会自动登录或设置 token，只返回成功状态
+      // 如果您的 API 设计是注册后自动登录，则需要在这里处理 token 和 user
+
+      _isLoading = false;
+      developer.log('Registration successful. Notifying listeners.', name: 'AuthProvider.register'); // [NEW LOG]
+      notifyListeners();
+      return true; // 返回 true 表示 API 调用成功
+
+    } catch (e, stackTrace) { // [MODIFIED] 捕获堆栈跟踪
+      // [MODIFIED] 添加详细的错误日志
+      _error = "ユーザー登録に失敗しました: ${e.toString()}";
+      _isLoading = false;
+       // **** 这里添加了更详细的日志 ****
+      developer.log(
+        'Registration failed!', 
+        name: 'AuthProvider.register', 
+        error: e, 
+        stackTrace: stackTrace
+      );
+      notifyListeners();
+      return false; // 返回 false 表示 API 调用失败
+    }
+  }
+
+  Future<void> logout() async {
+    _token = null;
+    _user = null;
+    // [REMOVED] 不再需要 setToken
+    // _apiService.setToken('');
+    developer.log('User logged out. Notifying listeners.', name: 'AuthProvider.logout'); // [NEW LOG]
+    notifyListeners();
+  }
+}
+
+camera_provider.dart:
+import 'package:flutter/material.dart';
+import '../models/camera.dart';
+import '../services/api_service.dart';
+
+class CameraProvider with ChangeNotifier {
+  final ApiService _apiService;
+
+  List<Camera> _cameras = [];
+  bool _isLoading = true;
+  String? _error;
+  Camera? _selectedCamera; // [FIX] 状态管理中添加 selectedCamera
+
+  List<Camera> get cameras => _cameras;
+  bool get isLoading => _isLoading;
+  String? get error => _error;
+  Camera? get selectedCamera => _selectedCamera; // [FIX] 添加 getter
+
+  CameraProvider(this._apiService) {
+    fetchCameras();
+  }
+
+  // [FIX] 添加 selectCamera 方法
+  void selectCamera(Camera camera) {
+    _selectedCamera = camera;
+    notifyListeners();
+  }
+
+  Future<void> fetchCameras() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      // _apiService.getCameras() 已经返回了 List<dynamic>
+      final List<dynamic> response = await _apiService.getCameras();
+
+      // [FIXED] 'response' 本身就是列表, 不再需要 ['data']
+      final List<dynamic> cameraData = response;
+
+      _cameras = cameraData
+          .map((data) => Camera.fromJson(data as Map<String, dynamic>))
+          .toList();
+      
+      // 默认选择第一个摄像头
+      if (_cameras.isNotEmpty) {
+        _selectedCamera = _cameras.first;
+      }
+
+    } catch (e) {
+      _error = "カメラリストの取得に失敗しました: ${e.toString()}";
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+}
+
+report_detail_provider.dart:
+import 'package:flutter/material.dart';
+import '../models/report_detail.dart';
+import '../services/api_service.dart';
+
+enum FeedbackStatus { idle, loading, success }
+
+class ReportDetailProvider with ChangeNotifier {
+  final ApiService _apiService;
+
+  ReportDetail? _reportDetail;
+  bool _isLoading = true;
+  String? _error;
+
+  // Feedback state
+  FeedbackStatus _feedbackStatus = FeedbackStatus.idle;
+  String _selectedReason = '人が映っていない'; // デフォルト値
+  String _feedbackNotes = '';
+  int? _currentImageIdForFeedback;
+
+  ReportDetail? get reportDetail => _reportDetail;
+  bool get isLoading => _isLoading;
+  String? get error => _error;
+  FeedbackStatus get feedbackStatus => _feedbackStatus;
+  String get selectedReason => _selectedReason;
+  String get feedbackNotes => _feedbackNotes;
+  int? get currentImageIdForFeedback => _currentImageIdForFeedback;
+
+  final List<String> errorReasons = [
+    '人が映っていない',
+    '危険な行動がない',
+    '危険の判断に誤りがある',
+    '危険判断の種類に誤りがある',
+    '遅延が発生する／画像が破損している／画質が悪い／画像が全く合っていない',
+  ];
+
+  ReportDetailProvider(this._apiService);
+
+  void resetFeedbackState() {
+    _feedbackStatus = FeedbackStatus.idle;
+    _feedbackNotes = '';
+    _selectedReason = errorReasons.first;
+    _currentImageIdForFeedback = null;
+    notifyListeners();
+  }
+
+  void updateSelectedReason(String? newValue) {
+    if (newValue != null) {
+      _selectedReason = newValue;
+      notifyListeners();
+    }
+  }
+
+  void updateFeedbackNotes(String notes) {
+    _feedbackNotes = notes;
+    notifyListeners();
+  }
+
+  void prepareFeedback(int imageId) {
+    _currentImageIdForFeedback = imageId;
+    _feedbackStatus = FeedbackStatus.idle;
+    notifyListeners();
+  }
+
+
+Future<void> fetchReportDetail(String caseId) async {
+  _isLoading = true;
+  _error = null;
+  _reportDetail = null;
+  notifyListeners();
+
+  try {
+    print('🔵 Provider: Fetching report detail for caseId: $caseId'); // 添加日志
+    
+    final Map<String, dynamic> data = await _apiService.getEventDetail(caseId);
+    
+    print('✅ Provider: Received data: $data'); // 添加日志
+    
+    if (data == null) {
+      throw Exception('サーバーからデータが返されませんでした');
+    }
+    
+    _reportDetail = ReportDetail.fromJson(data);
+    print('✅ Provider: ReportDetail parsed successfully'); // 添加日志
+    
+  } catch (e, stackTrace) {
+    print('❌ Provider ERROR: $e');
+    print('Stack trace: $stackTrace');
+    _error = 'レポート詳細の取得に失敗しました: ${e.toString()}';
+    _reportDetail = null;
+  } finally {
+    _isLoading = false;
+    notifyListeners();
+  }
+}
+
+  Future<void> submitFeedback({
+    required String eventId, // [FIX] APIサービスに合わせて String に変更
+    required int imageId,
+    required String reason,
+    required String notes,
+  }) async {
+    _feedbackStatus = FeedbackStatus.loading;
+    notifyListeners();
+
+    try {
+      // [FIX] 必要なパラメータをすべて渡す
+      await _apiService.submitFeedback(
+        eventId: eventId,
+        imageId: imageId,
+        reason: reason,
+        notes: notes,
+      );
+      _feedbackStatus = FeedbackStatus.success;
+    } catch (e) {
+      _error = "フィードバックの送信に失敗しました: ${e.toString()}";
+      _feedbackStatus = FeedbackStatus.idle; // 失敗したらアイドル状態に戻す
+    } finally {
+      notifyListeners();
+    }
+  }
+}
+
+report_provider.dart:
+import 'package:flutter/material.dart';
+import '../models/report_case.dart'; // 导入正确的 ReportCase 模型
+import '../services/api_service.dart';
+
+// 这是 ReportProvider 正确的类定义
+class ReportProvider with ChangeNotifier {
+  final ApiService _apiService; // 将由 ProxyProvider 注入
+
+  List<ReportCase> _reports = [];
+  bool _isLoading = false;
+  String? _error;
+  DateTimeRange _selectedDateRange;
+  Map<String, dynamic>? _paginationInfo;
+
+  List<ReportCase> get reports => _reports;
+  bool get isLoading => _isLoading;
+  String? get error => _error;
+  DateTimeRange get selectedDateRange => _selectedDateRange;
+
+  // 构造函数现在接收 ApiService
+  ReportProvider(this._apiService)
+      : _selectedDateRange = DateTimeRange(
+          start: DateTime.now().subtract(const Duration(days: 7)),
+          end: DateTime.now(),
+        ) {
+    // 构造函数中自动获取一次数据
+    // 注意：如果 ApiService 初始时没有 token, 这次 fetch 会失败
+    // 更好的做法是在 MainScreen 或 ReportHistoryScreen 的 initState 中调用
+    // fetchReports(); 
+    // ^ 我们在 report_history_screen.dart 的 initState 中调用它，所以这里注释掉
+  }
+
+  Future<void> fetchReports({DateTimeRange? dateRange, int page = 1}) async {
+    // 如果提供了新的日期范围，则更新
+    if (dateRange != null) {
+      _selectedDateRange = dateRange;
+    }
+
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final Map<String, dynamic> response = await _apiService.getEvents(
+        dateRange: _selectedDateRange,
+        page: page,
+      );
+
+      final List<dynamic> responseData = response['data'] as List<dynamic>;
+      _paginationInfo = response['pagination'] as Map<String, dynamic>;
+
+      _reports = responseData
+          .map((data) => ReportCase.fromJson(data as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      _error = "レポートの取得に失敗しました: ${e.toString()}";
+      _reports = []; // 发生错误时清空列表
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+}
+
+live_monitoring_screen.dart:
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/camera_provider.dart';
+import '../models/camera.dart';
+
+class LiveMonitoringScreen extends StatelessWidget {
+  const LiveMonitoringScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // [FIX] 使用 Consumer 来监听 CameraProvider 的变化
+    return Consumer<CameraProvider>(
+      builder: (context, cameraProvider, child) {
+        if (cameraProvider.isLoading && cameraProvider.cameras.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (cameraProvider.error != null) {
+          return Center(child: Text(cameraProvider.error!));
+        }
+
+        if (cameraProvider.cameras.isEmpty) {
+          return const Center(child: Text('利用可能なカメラがありません。'));
+        }
+
+        // メインレイアウト
+        return Column(
+          children: [
+            // 1. ビデオプレイヤーエリア
+            _buildVideoPlayer(context, cameraProvider.selectedCamera),
+            
+            // 2. カメラリストのタイトル
+            _buildListHeader(context),
+            
+            // 3. カメラリスト
+            _buildCameraList(cameraProvider),
+          ],
+        );
+      },
+    );
+  }
+
+  // ビデオプレイヤーウィジェット
+  Widget _buildVideoPlayer(BuildContext context, Camera? selectedCamera) {
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: Container(
+        width: double.infinity,
+        color: Colors.black,
+        child: Center(
+          child: selectedCamera == null
+              ? const Text('カメラが選択されていません', style: TextStyle(color: Colors.white))
+              : (selectedCamera.status == 'online'
+                  ? Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.videocam, color: Colors.green, size: 64),
+                        const SizedBox(height: 16),
+                        Text(
+                          '${selectedCamera.name} の映像 (デモ)',
+                          style: const TextStyle(color: Colors.white, fontSize: 18),
+                        ),
+                        const Text(
+                          '（実際のストリームはここに表示されます）',
+                          style: TextStyle(color: Colors.grey, fontSize: 14),
+                        ),
+                      ],
+                    )
+                  : Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.videocam_off, color: Colors.red, size: 64),
+                        const SizedBox(height: 16),
+                        Text(
+                          '${selectedCamera.name} はオフラインです',
+                          style: const TextStyle(color: Colors.white, fontSize: 18),
+                        ),
+                      ],
+                    )),
+        ),
+      ),
+    );
+  }
+
+  // カメラリストのヘッダー
+  Widget _buildListHeader(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'カメラ一覧',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () {
+              // データを再取得
+              context.read<CameraProvider>().fetchCameras();
+            },
+          )
+        ],
+      ),
+    );
+  }
+
+  // カメラリスト
+  Widget _buildCameraList(CameraProvider provider) {
+    return Expanded(
+      child: ListView.builder(
+        itemCount: provider.cameras.length,
+        itemBuilder: (context, index) {
+          final camera = provider.cameras[index];
+          // [FIX] provider.selectedCamera?.id で安全に比較
+          final isSelected = provider.selectedCamera?.id == camera.id;
+
+          return Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            elevation: isSelected ? 4 : 1,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(
+                color: isSelected ? Colors.blue : Colors.transparent,
+                width: 2,
+              ),
+            ),
+            child: ListTile(
+              leading: Icon(
+                camera.status == 'online' ? Icons.videocam : Icons.videocam_off,
+                color: camera.status == 'online' ? Colors.green : Colors.red,
+              ),
+              title: Text(
+                camera.name,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              // [FIXED] camera.location -> camera.name
+              // APIは 'name' を返すが、'location' は返さない
+              // ここではカメラ名を subtitle に表示する（もしくは status を表示する）
+              subtitle: Text(
+                camera.status == 'online' ? 'オンライン' : 'オフライン',
+                style: TextStyle(
+                  color: camera.status == 'online' ? Colors.green : Colors.red,
+                ),
+              ),
+              trailing: isSelected
+                  ? const Icon(Icons.check_circle, color: Colors.blue)
+                  : const Icon(Icons.arrow_forward_ios, color: Colors.grey, size: 16),
+              onTap: () {
+                // [FIX] provider.selectCamera を呼び出す
+                provider.selectCamera(camera);
+              },
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+login_screen.dart:
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
+import 'register_screen.dart'; 
+import 'main_screen.dart'; 
+
+// 
+// 占位符
+final Widget homeScreenForNavigation = const MainScreen();
+final Widget registerScreenForNavigation = const RegisterScreen();
+
+
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isPasswordVisible = false;
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    // Hide keyboard
+    FocusScope.of(context).unfocus();
+    
+    // 
+    // if (!_formKey.currentState!.validate()) {
+    //   return;
+    // }
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+    final success = await authProvider.login(
+      _usernameController.text.trim(),
+      _passwordController.text.trim(),
+    );
+
+    if (mounted) {
+      if (success) {
+        // Navigate to home screen on successful login
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => homeScreenForNavigation),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(authProvider.error ?? 'ログインに失敗しました。'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+
+    final authProvider = context.watch<AuthProvider>();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('ログイン'),
+        centerTitle: true,
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // App Logo
+                // const FlutterLogo(size: 80),
+                const SizedBox(height: 20),
+                Text(
+                  'ようこそ',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'アカウント情報を入力してください',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 40),
+                TextFormField(
+                  controller: _usernameController,
+                  decoration: const InputDecoration(
+                    labelText: 'ユーザー名',
+                    prefixIcon: Icon(Icons.person_outline),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(12)),
+                    ),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'ユーザー名を入力してください。';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 20),
+                TextFormField(
+                  controller: _passwordController,
+                  obscureText: !_isPasswordVisible,
+                  decoration: InputDecoration(
+                    labelText: 'パスワード',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    border: const OutlineInputBorder(
+                      borderRadius: BorderRadius.all(Radius.circular(12)),
+                    ),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _isPasswordVisible ? Icons.visibility_off : Icons.visibility,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _isPasswordVisible = !_isPasswordVisible;
+                        });
+                      },
+                    ),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'パスワードを入力してください。';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 30),
+                authProvider.isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: _submit,
+                        child: const Text('ログイン'),
+                      ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('アカウントをお持ちでないですか？'),
+                    TextButton(
+                      onPressed: authProvider.isLoading ? null : () {
+                        // Navigate to register screen
+                         Navigator.of(context).push(
+                           MaterialPageRoute(builder: (_) => registerScreenForNavigation),
+                         );
+                      },
+                      child: const Text('新規登録'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+main_screen.dart:
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../providers/auth_provider.dart';
+import 'live_monitoring_screen.dart';
+import 'report_history_screen.dart';
+import 'mypage_screen.dart';
+import 'login_screen.dart';
+
+class MainScreen extends StatefulWidget {
+  const MainScreen({super.key});
+
+  @override
+  State<MainScreen> createState() => _MainScreenState();
+}
+
+class _MainScreenState extends State<MainScreen> {
+  int _selectedIndex = 0;
+
+  // 导航栏对应的页面列表
+  static const List<Widget> _widgetOptions = <Widget>[
+    LiveMonitoringScreen(),
+    ReportHistoryScreen(),
+    MypageScreen(),
+  ];
+
+  // 导航栏对应的标题列表
+  static const List<String> _appBarTitles = <String>[
+    'リアルタイム監視',
+    'レポート履歴',
+    'マイページ',
+  ];
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final authProvider = context.watch<AuthProvider>();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_appBarTitles[_selectedIndex]),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'ログアウト',
+            onPressed: () {
+              // AuthProviderーlogout
+              Provider.of<AuthProvider>(context, listen: false).logout();
+              // back to login
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (context) => const LoginScreen()),
+                (Route<dynamic> route) => false,
+              );
+            },
+          )
+        ],
+      ),
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _widgetOptions,
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.videocam_outlined),
+            activeIcon: Icon(Icons.videocam),
+            label: '監視',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.history_outlined),
+            activeIcon: Icon(Icons.history),
+            label: '履歴',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_outline),
+            activeIcon: Icon(Icons.person),
+            label: 'マイページ',
+          ),
+        ],
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        selectedItemColor: Theme.of(context).colorScheme.primary, // 選択時の色
+        unselectedItemColor: Colors.grey, // 非選択時の色
+        showUnselectedLabels: true, // 非選択時のラベルも表示
+        type: BottomNavigationBarType.fixed, // アイテムの挙動を固定
+      ),
+    );
+  }
+}
+mypage_screen.dart:
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
+import 'login_screen.dart';
+import 'periodic_report_screen.dart'; 
+
+class MypageScreen extends StatelessWidget {
+  const MypageScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+
+    final authProvider = context.watch<AuthProvider>();
+    final user = authProvider.user;
+
+    return Scaffold(
+      // 背景色を設定
+      backgroundColor: Colors.grey[100],
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            expandedHeight: 220.0,
+            flexibleSpace: FlexibleSpaceBar(
+              background: _buildHeader(context, user?.username ?? 'Guest'),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  _buildSectionTitle(context, 'アカウント設定'),
+                  _buildOptionCard(
+                    context,
+                    options: [
+                      _buildListTile(
+                        context,
+                        icon: Icons.person_outline,
+                        title: 'プロフィール編集',
+                        onTap: () {},
+                      ),
+                      _buildListTile(
+                        context,
+                        icon: Icons.lock_outline,
+                        title: 'パスワード変更',
+                        onTap: () {},
+                      ),
+                      _buildListTile(
+                        context,
+                        icon: Icons.email_outlined,
+                        title: 'メールアドレス変更',
+                        onTap: () {},
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  _buildSectionTitle(context, 'その他'),
+                  _buildOptionCard(
+                    context,
+                    options: [
+                      _buildListTile( // [ADDED] Start
+                        context,
+                        icon: Icons.bar_chart_outlined,
+                        title: '定期レポート',
+                        onTap: () {
+                          Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => const PeriodicReportScreen(),
+                          ));
+                        },
+                      ), // [ADDED] End
+                      _buildListTile(
+                        context,
+                        icon: Icons.help_outline,
+                        title: 'ヘルプ',
+                        onTap: () {},
+                      ),
+                      _buildListTile(
+                        context,
+                        icon: Icons.description_outlined,
+                        title: '利用規約',
+                        onTap: () {},
+                      ),
+                      _buildListTile(
+                        context,
+                        icon: Icons.privacy_tip_outlined,
+                        title: 'プライバシーポリシー',
+                        onTap: () {},
+                      ),
+                      _buildListTile(
+                        context,
+                        icon: Icons.logout,
+                        title: 'ログアウト',
+                        isLogout: true,
+                        onTap: () {
+                          // ログアウト処理
+                          context.read<AuthProvider>().logout();
+                          // ログイン画面に戻る
+                          Navigator.of(context, rootNavigator: true)
+                              .pushAndRemoveUntil(
+                            MaterialPageRoute(
+                                builder: (context) => const LoginScreen()),
+                            (route) => false,
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+  Widget _buildHeader(BuildContext context, String username) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Theme.of(context).primaryColor,
+            Theme.of(context).primaryColor.withOpacity(0.7)
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircleAvatar(
+              radius: 40,
+              backgroundColor: Colors.white,
+              child: Icon(
+                Icons.person,
+                size: 50,
+                color: Colors.blueAccent,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              username,
+              style: Theme.of(context)
+                  .textTheme
+                  .headlineMedium
+                  ?.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+
+  Widget _buildSectionTitle(BuildContext context, String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Text(
+        title,
+        style: Theme.of(context)
+            .textTheme
+            .titleMedium
+            ?.copyWith(color: Colors.grey.shade600),
+      ),
+    );
+  }
+
+
+  Widget _buildOptionCard(BuildContext context,
+      {required List<Widget> options}) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade300),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: options,
+      ),
+    );
+  }
+
+
+  Widget _buildListTile(BuildContext context,
+      {required IconData icon,
+      required String title,
+      required VoidCallback onTap,
+      bool isLogout = false}) {
+    final color = isLogout ? Colors.red : Colors.black;
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          child: Row(
+            children: [
+              Icon(icon, color: color),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyLarge
+                      ?.copyWith(color: color),
+                ),
+              ),
+              if (!isLogout)
+                const Icon(Icons.arrow_forward_ios,
+                    size: 16, color: Colors.grey),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+periodic_report_screen.dart:
+import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../services/api_service.dart';
+
+// [MODIFIED] 转换为 StatefulWidget 以管理状态
+class PeriodicReportScreen extends StatefulWidget {
+  const PeriodicReportScreen({super.key});
+
+  @override
+  State<PeriodicReportScreen> createState() => _PeriodicReportScreenState();
+}
+
+class _PeriodicReportScreenState extends State<PeriodicReportScreen> {
+  // --- 状态变量 ---
+  bool _isLoading = true;
+  String? _error;
+  // 用于存储从 API G/api/reports 返回的完整 JSON 对象
+  Map<String, dynamic>? _reportData;
+
+  @override
+  void initState() {
+    super.initState();
+    // 页面加载时自动获取数据
+    _fetchReportData();
+  }
+
+  // --- 数据获取方法 ---
+  Future<void> _fetchReportData() async {
+    // 使用 Provider.of 获取由 ProxyProvider 提供的、已认证的 ApiService 实例
+    final apiService = Provider.of<ApiService>(context, listen: false);
+
+    try {
+      final data = await apiService.getPeriodicReport();
+      setState(() {
+        _reportData = data;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = "レポートの読み込みに失敗しました: ${e.toString()}";
+        _isLoading = false;
+      });
+    }
+  }
+
+  // --- 主构建方法 ---
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('定期レポート'),
+        actions: [
+          // 添加一个刷新按钮
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _isLoading ? null : _fetchReportData,
+          ),
+        ],
+      ),
+      body: _buildBody(), // [MODIFIED] 使用 _buildBody 来处理状态
+    );
+  }
+
+  // --- 状态处理 ---
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Text(_error!,
+              style: const TextStyle(color: Colors.red, fontSize: 16),
+              textAlign: TextAlign.center),
+        ),
+      );
+    }
+    if (_reportData == null || _reportData!['success'] != true) {
+      return const Center(child: Text('レポートデータを取得できませんでした。'));
+    }
+
+    // --- 数据解析 ---
+    // [MODIFIED] 从 _reportData 中解析数据
+    // 我们假设 _reportData 包含了 API 规范中定义的所有键
+    final headerData = _reportData!['dashboard_header'] as Map<String, dynamic>;
+    final metricsData = _reportData!['model_performance'] as Map<String, dynamic>;
+    final statsData = _reportData!['incident_stats'] as Map<String, dynamic>;
+    final comparisonData =
+        _reportData!['model_comparison'] as Map<String, dynamic>;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // [MODIFIED] 传递解析后的数据
+          _buildHeader(context, headerData),
+          const SizedBox(height: 24),
+          _buildModelMetrics(context, metricsData),
+          const SizedBox(height: 24),
+          _buildIncidentStats(context, statsData),
+          const SizedBox(height: 24),
+          _buildModelComparisonTable(context, comparisonData),
+        ],
+      ),
+    );
+  }
+
+  // --- 各セクションのビルドメソッド ---
+
+  // ヘッダー
+  Widget _buildHeader(
+      BuildContext context, Map<String, dynamic> headerData) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF0D6EFD), Color(0xFF6F42C1)],
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          Text(
+            headerData['title'] ?? '公園内事故予測モデル 分析ダッシュボード',
+            style: Theme.of(context)
+                .textTheme
+                .headlineSmall
+                ?.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            // [MODIFIED]
+            '現在稼働中のモデル: ${headerData['current_model'] ?? 'N/A'}',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(color: Colors.white70),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // モデルの評価指標セクション
+  Widget _buildModelMetrics(
+      BuildContext context, Map<String, dynamic> metricsData) {
+    // [MODIFIED] 从 metricsData 解析数据
+    // 使用 .map 将 List<dynamic> 安全转换为 List<double>
+    final precision = (metricsData['precision_data'] as List)
+        .map((e) => (e as num).toDouble())
+        .toList();
+    final recall = (metricsData['recall_data'] as List)
+        .map((e) => (e as num).toDouble())
+        .toList();
+    final f1score = (metricsData['f1_score_data'] as List)
+        .map((e) => (e as num).toDouble())
+        .toList();
+
+    return Column(
+      children: [
+        _buildChartCard(
+          context,
+          title: 'モデルの適合率 (Precision)',
+          chart: _buildLineChart(
+            data: precision.isNotEmpty ? precision : [0], // [MODIFIED]
+            color: Colors.blue,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _buildChartCard(
+          context,
+          title: 'モデルの再現率 (Recall)',
+          chart: _buildLineChart(
+            data: recall.isNotEmpty ? recall : [0], // [MODIFIED]
+            color: Colors.red,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _buildChartCard(
+          context,
+          title: 'モデルのF1-Score',
+          chart: _buildLineChart(
+            data: f1score.isNotEmpty ? f1score : [0], // [MODIFIED]
+            color: Colors.teal,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // 事故統計セクション
+  Widget _buildIncidentStats(
+      BuildContext context, Map<String, dynamic> statsData) {
+    // [MODIFIED] 解析数据
+    final totalIncidents = statsData['total_incidents']?.toString() ?? '0';
+    final categoryData =
+        (statsData['category_distribution'] as List).cast<Map<String, dynamic>>();
+    final hourlyData =
+        (statsData['hourly_distribution'] as List).cast<Map<String, dynamic>>();
+
+    return Column(
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 2,
+              child: _buildMetricCard(
+                context,
+                label: '今月の事故発生件数',
+                value: totalIncidents, // [MODIFIED]
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              flex: 3,
+              child: _buildChartCard(
+                context,
+                title: '事故の分類',
+                chart: _buildPieChart(categoryData), // [MODIFIED]
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _buildChartCard(
+          context,
+          title: '時間帯別の事故発生状況',
+          chart: _buildBarChart(hourlyData), // [MODIFIED]
+        ),
+      ],
+    );
+  }
+
+  // モデル比較テーブル
+  Widget _buildModelComparisonTable(
+      BuildContext context, Map<String, dynamic> comparisonData) {
+    // [MODIFIED] 解析数据
+    final models =
+        (comparisonData['models'] as List).cast<Map<String, dynamic>>();
+
+    return _buildDashboardCard(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(comparisonData['title'] ?? '最近3つのモデルのF1-Score比較',
+                style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 16),
+            // [MODIFIED] 动态生成表格行
+            ...models.asMap().entries.map((entry) {
+              final model = entry.value;
+              final bool isLast = entry.key == models.length - 1;
+              final status = model['status'] ?? '旧';
+              final progress = (model['f1_score'] as num? ?? 0.0).toDouble();
+
+              return Column(
+                children: [
+                  _buildComparisonTableRow(
+                    context,
+                    modelName: model['name'] ?? 'N/A',
+                    score: '${(progress * 100).toStringAsFixed(2)}%',
+                    status: status,
+                    statusColor:
+                        status == '稼働中' ? Colors.green : Colors.grey,
+                    progress: progress,
+                    progressColor:
+                        status == '稼働中' ? Colors.green : Colors.blueGrey,
+                  ),
+                  if (!isLast) const Divider(),
+                ],
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- 共通・個別ウィジェット ---
+
+  // ダッシュボードカードの共通スタイル
+  Widget _buildDashboardCard({required Widget child}) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: child,
+    );
+  }
+
+  // チャート用のカード
+  Widget _buildChartCard(BuildContext context,
+      {required String title, required Widget chart}) {
+    return _buildDashboardCard(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 24),
+            SizedBox(height: 200, child: chart),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 数値表示用のカード
+  Widget _buildMetricCard(BuildContext context,
+      {required String label, required String value}) {
+    return _buildDashboardCard(
+      child: Container(
+        height: 264, // PieChartの高さに合わせる
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              value,
+              style: Theme.of(context)
+                  .textTheme
+                  .displayMedium
+                  ?.copyWith(fontWeight: FontWeight.bold, color: Colors.blue),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.bodyLarge,
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 比較テーブルの行
+  Widget _buildComparisonTableRow(
+    BuildContext context, {
+    required String modelName,
+    required String score,
+    required String status,
+    required Color statusColor,
+    required double progress,
+    required Color progressColor,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(modelName, style: Theme.of(context).textTheme.titleMedium),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(status,
+                    style: const TextStyle(color: Colors.white, fontSize: 12)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 20,
+                    backgroundColor: progressColor.withOpacity(0.2),
+                    valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Text(score,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- チャートの定義 ---
+
+  // 折れ線グラフ
+  Widget _buildLineChart({required List<double> data, required Color color}) {
+    final spots = data
+        .asMap()
+        .entries
+        .map((e) => FlSpot(e.key.toDouble(), e.value))
+        .toList();
+
+    return LineChart(
+      LineChartData(
+        gridData: FlGridData(show: false),
+        titlesData: FlTitlesData(show: false),
+        borderData: FlBorderData(show: false),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            isCurved: true,
+            color: color,
+            barWidth: 4,
+            isStrokeCapRound: true,
+            dotData: FlDotData(show: false),
+            belowBarData: BarAreaData(
+              show: true,
+              color: color.withOpacity(0.2),
+            ),
+          ),
+        ],
+        minY: 0,
+        maxY: 100,
+      ),
+    );
+  }
+
+  // 円グラフ
+  Widget _buildPieChart(List<Map<String, dynamic>> data) {
+    if (data.isEmpty) return const Center(child: Text('データがありません'));
+
+    return PieChart(
+      PieChartData(
+        sectionsSpace: 4,
+        centerSpaceRadius: 40,
+        // [MODIFIED] 动态生成饼图
+        sections: data.map((item) {
+          final value = (item['value'] as num? ?? 0.0).toDouble();
+          return PieChartSectionData(
+              value: value,
+              title: '${value.toStringAsFixed(0)}%', // API が % を返すと仮定
+              color: _getColorForCategory(item['label'] ?? ''), // ヘルパーで色を決定
+              radius: 50,
+              titleStyle: const TextStyle(fontWeight: FontWeight.bold));
+        }).toList(),
+      ),
+    );
+  }
+
+  // 棒グラフ
+  Widget _buildBarChart(List<Map<String, dynamic>> data) {
+    if (data.isEmpty) return const Center(child: Text('データがありません'));
+
+    final labels = data.map((item) => item['label'] as String? ?? '').toList();
+
+    return BarChart(
+      BarChartData(
+        alignment: BarChartAlignment.spaceAround,
+        gridData: FlGridData(show: false),
+        titlesData: FlTitlesData(
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (value, meta) {
+                final index = value.toInt();
+                if (index < 0 || index >= labels.length) return Container();
+                // [MODIFIED] 动态设置标签
+                return Text(
+                  labels[index].replaceAll('時', ''), // '12-14時' -> '12-14'
+                  style: const TextStyle(fontSize: 10),
+                );
+              },
+              reservedSize: 30,
+            ),
+          ),
+          leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        ),
+        borderData: FlBorderData(show: false),
+        // [MODIFIED] 动态生成柱状图
+        barGroups: data.asMap().entries.map((entry) {
+          final index = entry.key;
+          final item = entry.value;
+          final value = (item['value'] as num? ?? 0.0).toDouble();
+          return BarChartGroupData(x: index, barRods: [
+            BarChartRodData(
+                toY: value,
+                color: _getColorForCategory(item['label'] ?? '', index),
+                width: 20)
+          ]);
+        }).toList(),
+      ),
+    );
+  }
+
+  // [ADDED] 动态颜色的辅助函数
+  Color _getColorForCategory(String category, [int index = 0]) {
+    switch (category.toLowerCase()) {
+      case 'slide':
+      case '滑り台':
+        return Colors.purple;
+      case 'swing':
+      case 'ブランコ':
+        return Colors.orange;
+      case 'junglegym':
+      case 'ジャングルジム':
+        return Colors.teal;
+      default:
+        // 棒グラフや円グラフのフォールバック
+        final colors = [
+          Colors.amber,
+          Colors.blue,
+          Colors.red,
+          Colors.green,
+          Colors.purple
+        ];
+        return colors[index % colors.length];
+    }
+  }
+}
+
+register_screen.dart:
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
+import 'dart:developer' as developer; // [NEW] 导入 developer
+
+class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key});
+
+  @override
+  State<RegisterScreen> createState() => _RegisterScreenState();
+}
+
+class _RegisterScreenState extends State<RegisterScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _usernameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _fullNameController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _emailController.dispose();
+    _fullNameController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitForm() async {
+    // [DEBUG LOG] 确认按钮点击事件被触发
+    developer.log('Register button pressed. Attempting to submit form.', name: 'RegisterScreen._submitForm');
+
+    // [DEBUG LOG] 检查 _formKey 是否存在
+    developer.log('Form key state: ${_formKey.currentState}', name: 'RegisterScreen._submitForm');
+
+    if (_formKey.currentState?.validate() ?? false) {
+      // [DEBUG LOG] 确认表单验证通过
+      developer.log('Form validation successful. Calling AuthProvider.register...', name: 'RegisterScreen._submitForm');
+
+      final authProvider = context.read<AuthProvider>();
+      try {
+        final success = await authProvider.register(
+          username: _usernameController.text,
+          password: _passwordController.text,
+          email: _emailController.text,
+          fullName: _fullNameController.text,
+        );
+
+        if (success && mounted) {
+           // [DEBUG LOG] 确认注册成功回调
+           developer.log('AuthProvider.register returned success.', name: 'RegisterScreen._submitForm');
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('ユーザー登録が成功しました。ログインしてください。'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.of(context).pop(); // 登録成功後、ログイン画面に戻る
+        } else if (!success && mounted) {
+           // [DEBUG LOG] 确认注册失败回调 (来自 Provider)
+           developer.log('AuthProvider.register returned failure. Error: ${authProvider.error}', name: 'RegisterScreen._submitForm');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('登録に失敗しました: ${authProvider.error ?? '不明なエラー'}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } catch (e) {
+         // [DEBUG LOG] 捕获 Provider 调用本身的异常
+         developer.log('Exception caught while calling AuthProvider.register', name: 'RegisterScreen._submitForm', error: e);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('登録中にエラーが発生しました: ${e.toString()}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } else {
+       // [DEBUG LOG] 确认表单验证失败
+       developer.log('Form validation failed.', name: 'RegisterScreen._submitForm');
+    }
+  }
+
+
+  @override
+  Widget build(BuildContext context) {
+    // AuthProvider の状態を監視して、ローディング表示を制御
+    final isLoading = context.watch<AuthProvider>().isLoading;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('新規登録'),
+      ),
+      body: Stack( // ローディング表示のために Stack を使用
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Form(
+              key: _formKey,
+              child: ListView( // SingleChildScrollView の代わりに ListView を使うと、フォーカス移動などが改善される場合がある
+                children: [
+                  TextFormField(
+                    controller: _usernameController,
+                    decoration: const InputDecoration(
+                      labelText: 'ユーザー名',
+                      prefixIcon: Icon(Icons.person),
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'ユーザー名を入力してください';
+                      }
+                      if (value.length < 3) {
+                        return 'ユーザー名は3文字以上で入力してください';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _emailController,
+                    decoration: const InputDecoration(
+                      labelText: 'メールアドレス',
+                      prefixIcon: Icon(Icons.email),
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'メールアドレスを入力してください';
+                      }
+                      // 簡単なメールアドレス形式の検証
+                      if (!RegExp(r'\S+@\S+\.\S+').hasMatch(value)) {
+                        return '有効なメールアドレスを入力してください';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _fullNameController,
+                    decoration: const InputDecoration(
+                      labelText: '氏名',
+                      prefixIcon: Icon(Icons.badge),
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return '氏名を入力してください';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _passwordController,
+                    decoration: InputDecoration(
+                      labelText: 'パスワード',
+                      prefixIcon: const Icon(Icons.lock),
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _obscurePassword = !_obscurePassword;
+                          });
+                        },
+                      ),
+                    ),
+                    obscureText: _obscurePassword,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'パスワードを入力してください';
+                      }
+                      if (value.length < 6) {
+                        return 'パスワードは6文字以上で入力してください';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _confirmPasswordController,
+                    decoration: InputDecoration(
+                      labelText: 'パスワード (確認)',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      border: const OutlineInputBorder(),
+                       suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscureConfirmPassword ? Icons.visibility_off : Icons.visibility,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _obscureConfirmPassword = !_obscureConfirmPassword;
+                          });
+                        },
+                      ),
+                    ),
+                    obscureText: _obscureConfirmPassword,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return '確認用パスワードを入力してください';
+                      }
+                      if (value != _passwordController.text) {
+                        return 'パスワードが一致しません';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 32),
+                  ElevatedButton(
+                    onPressed: isLoading ? null : _submitForm, // ローディング中はボタンを無効化
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      textStyle: const TextStyle(fontSize: 18),
+                    ),
+                    child: const Text('登録'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // ローディングインジケーターを重ねて表示
+          if (isLoading)
+            Container(
+              color: Colors.black.withOpacity(0.5), // 背景を少し暗くする
+              child: const Center(
+                child: CircularProgressIndicator(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+report_detail_screen.dart:
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+import '../models/report_detail.dart';
+import '../providers/report_detail_provider.dart';
+import '../services/api_service.dart'; // [FIX] 导入 ApiService
+
+class ReportDetailScreen extends StatefulWidget {
+  final String caseId; // 接收 String 类型的 caseId
+
+  const ReportDetailScreen({super.key, required this.caseId});
+
+  @override
+  State<ReportDetailScreen> createState() => _ReportDetailScreenState();
+}
+
+class _ReportDetailScreenState extends State<ReportDetailScreen> {
+  final PageController _pageController = PageController();
+  int _currentPage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // 画面初期化時に詳細データを取得
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ReportDetailProvider>().fetchReportDetail(widget.caseId);
+    });
+
+    _pageController.addListener(() {
+      setState(() {
+        _currentPage = _pageController.page?.round() ?? 0;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('レポート詳細'),
+      ),
+      body: Consumer<ReportDetailProvider>(
+        builder: (context, provider, child) {
+          if (provider.isLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (provider.error != null) {
+            return Center(child: Text(provider.error!));
+          }
+
+          if (provider.reportDetail == null) {
+            return const Center(child: Text('レポートが見つかりません。'));
+          }
+
+          final report = provider.reportDetail!;
+          final currentImage = report.images.isNotEmpty
+              ? report.images[_currentPage]
+              : null;
+
+          return Column(
+            children: [
+              // 1. 画像スライダー (画面の50%)
+              Expanded(
+                flex: 5, // 50%
+                child: _buildImageSlider(report.images),
+              ),
+              // 2. 詳細情報 (画面の50%)
+              Expanded(
+                flex: 5, // 50%
+                child: _buildImageDetails(
+                    context, report, currentImage, provider),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // --- Widgets ---
+
+  Widget _buildImageSlider(List<ImageDetail> images) {
+  if (images.isEmpty) {
+    return Container(
+      color: Colors.grey[300],
+      child: const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.image_not_supported, color: Colors.grey, size: 64),
+            SizedBox(height: 16),
+            Text('関連画像がありません。', style: TextStyle(color: Colors.grey)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  return PageView.builder(
+    controller: _pageController,
+    itemCount: images.length,
+    itemBuilder: (context, index) {
+      final image = images[index];
+      return Container(
+        color: Colors.black87,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // 显示网络图片
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Image.network(
+                    image.imageUrl,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Icon(Icons.broken_image, color: Colors.white, size: 100);
+                    },
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return const Center(
+                        child: CircularProgressIndicator(color: Colors.white),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // 图片标题
+              Text(
+                '画像 ${image.imageId} (デモ)',
+                style: const TextStyle(color: Colors.white, fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Image URL: ${image.imageUrl}',
+                style: const TextStyle(color: Colors.grey, fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+
+  Widget _buildImageDetails(BuildContext context, ReportDetail report,
+      ImageDetail? currentImage, ReportDetailProvider provider) {
+    if (currentImage == null) {
+      return const Center(child: Text('画像情報がありません。'));
+    }
+
+    final dateFormat = DateFormat('yyyy-MM-dd HH:mm:ss');
+    bool hasSubmitted = provider.feedbackStatus == FeedbackStatus.success;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 画像インジケーター
+          Text(
+            // [FIX] currentImage.imageId は int なので .toString() を使用
+            '画像 ${currentImage.imageId.toString()} / ${report.imageCount}',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(color: Colors.grey[700]),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+
+          // 情報カード
+          Card(
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildDetailRow(context, 'スコア', currentImage.score.toString(),
+                      isScore: true, score: currentImage.score),
+                  const Divider(),
+                  _buildDetailRow(
+                      context, '発生時刻', dateFormat.format(currentImage.timestamp)),
+                  const Divider(),
+                  _buildDetailRow(context, 'カテゴリ', report.category),
+                  const Divider(),
+                  _buildDetailRow(
+                      context, '検知された画像数', report.imageCount.toString()),
+                  const Divider(),
+                  _buildDeductionList(context, currentImage.deductionItems),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // フィードバックボタン
+          ElevatedButton.icon(
+            icon: Icon(
+              hasSubmitted ? Icons.check_circle : Icons.error_outline,
+            ),
+            label: Text(hasSubmitted ? 'フィードバック送信済み' : '誤検知を報告'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: hasSubmitted ? Colors.grey : Colors.red,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+            // [FIX] 既に送信成功した場合はボタンを無効化
+            onPressed: hasSubmitted
+                ? null
+                : () {
+                    // [FIX] フィードバック対象の画像IDをProviderにセット
+                    provider.prepareFeedback(currentImage.imageId);
+                    _showFeedbackDialog(context, provider, report.id.toString());
+                  },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- Feedback Dialog ---
+
+  void _showFeedbackDialog(
+      BuildContext context, ReportDetailProvider provider, String eventId) {
+    // ダイアログは自身の状態を管理するため、StatefulBuilder を使用
+    showDialog(
+      context: context, // 这个 context 是 ReportDetailScreen 的 context
+      barrierDismissible: provider.feedbackStatus != FeedbackStatus.loading,
+      builder: (BuildContext dialogContext) { // 这个 dialogContext 是 Dialog 自己的新 context
+        // [FIX] 在这里使用 ChangeNotifierProvider.value，
+        // 将 ReportDetailScreen 的 provider 实例 "注入" 到弹窗的 context 中
+        return ChangeNotifierProvider.value(
+          value: provider,
+          child: StatefulBuilder(
+            builder: (context, setDialogState) { // 现在的这个 'context' 可以正确找到 Provider
+              // Provider の状態をリッスン
+              // [FIX] 现在这个 context.watch 可以正常工作了
+              final status = context.watch<ReportDetailProvider>().feedbackStatus;
+
+              if (status == FeedbackStatus.success) {
+                return AlertDialog(
+                  title: const Text('フィードバック成功'),
+                  content: const Text('フィードバックが正常に送信されました。'),
+                  actions: [
+                    TextButton(
+                      child: const Text('確認'),
+                      onPressed: () {
+                        Navigator.of(dialogContext).pop();
+                        // Provider の状態をリセット
+                        // [FIX] 这里使用 context.read 也没问题了
+                        context.read<ReportDetailProvider>().resetFeedbackState();
+                      },
+                    ),
+                  ],
+                );
+              }
+
+              return AlertDialog(
+                title: const Text('誤検知を報告'),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('エラーの種類を選択してください:'),
+                      DropdownButton<String>(
+                        isExpanded: true,
+                        // [FIX] 使用 context.watch 来获取最新的 provider 状态
+                        value: context.watch<ReportDetailProvider>().selectedReason,
+                        onChanged: (newValue) {
+                          // [FIX] 使用 context.read 来调用 provider 的方法
+                          context.read<ReportDetailProvider>().updateSelectedReason(newValue);
+                          // setDialogState は不要 (Provider が更新を通知するため)
+                        },
+                        items: provider.errorReasons // 'provider' 实例仍然可以通过闭包访问
+                            .map<DropdownMenuItem<String>>((String value) {
+                          return DropdownMenuItem<String>(
+                            value: value,
+                            child: Text(value, overflow: TextOverflow.ellipsis),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        maxLines: 4,
+                        maxLength: 200,
+                        decoration: const InputDecoration(
+                          labelText: '補足情報 (任意)',
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (value) {
+                          // [FIX] 使用 context.read 来调用 provider 的方法
+                          context.read<ReportDetailProvider>().updateFeedbackNotes(value);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    child: const Text('キャンセル'),
+                    onPressed: status == FeedbackStatus.loading
+                        ? null
+                        : () => Navigator.of(dialogContext).pop(),
+                  ),
+                  ElevatedButton(
+                    child: status == FeedbackStatus.loading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Text('送信'),
+                    onPressed: status == FeedbackStatus.loading
+                        ? null
+                        : () {
+                            // [FIX] 必要なパラメータをすべて渡す
+                            // [FIX] 使用 context.read 来获取 provider
+                            final provider = context.read<ReportDetailProvider>();
+                            final imageId = provider.currentImageIdForFeedback;
+                            
+                            if (imageId != null) {
+                              provider.submitFeedback(
+                                eventId: eventId,
+                                imageId: imageId,
+                                reason: provider.selectedReason,
+                                notes: provider.feedbackNotes,
+                              );
+                            }
+                          },
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  // --- Detail Widgets ---
+
+  Widget _buildDetailRow(BuildContext context, String title, String value,
+      {bool isScore = false, int score = 0}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              title,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyLarge
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: isScore
+                  ? TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: score < 50 ? Colors.red : Colors.orange,
+                    )
+                  : Theme.of(context).textTheme.bodyLarge,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeductionList(BuildContext context, List<String> deductions) {
+    if (deductions.isEmpty) {
+      return _buildDetailRow(context, '扣分项目', 'なし');
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: 120,
+                child: Text(
+                  '扣分项目',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyLarge
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.only(left: 16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: deductions.map((item) {
+                return Text(
+                  '・ $item',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyLarge
+                      ?.copyWith(color: Colors.red[700]),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+report_history_screen.dart:
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+import '../providers/report_provider.dart';
+import '../models/report_case.dart';
+import 'report_detail_screen.dart';
+import '../providers/report_detail_provider.dart';
+import '../services/api_service.dart'; // [FIX] 导入 ApiService
+
+class ReportHistoryScreen extends StatefulWidget {
+  const ReportHistoryScreen({super.key});
+
+  @override
+  State<ReportHistoryScreen> createState() => _ReportHistoryScreenState();
+}
+
+class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // 画面が初期化された時にデータを取得する
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ReportProvider>().fetchReports();
+    });
+  }
+
+  Future<void> _selectDateRange(BuildContext context) async {
+    final provider = context.read<ReportProvider>();
+    final initialRange = provider.selectedDateRange ??
+        DateTimeRange(
+          start: DateTime.now().subtract(const Duration(days: 7)),
+          end: DateTime.now(),
+        );
+
+    // [FIXED] 将 lastDate 设置为明天的开始，以允许选择今天 (10/28) 00:00:00 到 23:59:59 的范围
+    final tomorrow = DateTime.now().add(const Duration(days: 1));
+    final newRange = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2024), // A more reasonable start date
+      // [FIXED] lastDate 必须是可选范围的结束点
+      lastDate: DateTime(tomorrow.year, tomorrow.month, tomorrow.day), 
+      initialDateRange: initialRange,
+    );
+
+    if (newRange != null) {
+      provider.fetchReports(dateRange: newRange);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // [FIX] 从 context 中获取 ApiService 实例，供 ReportDetailProvider 使用
+    final apiService = Provider.of<ApiService>(context, listen: false);
+
+    return Consumer<ReportProvider>(
+      builder: (context, provider, child) {
+        return Column(
+          children: [
+            _buildDateSelector(context, provider),
+            Expanded(
+              child: provider.isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : provider.error != null
+                      ? Center(child: Text('エラー: ${provider.error!}'))
+                      : provider.reports.isEmpty
+                          ? const Center(
+                              child: Text('指定された期間のレポートはありません。',
+                                  style: TextStyle(fontSize: 16)))
+                          : _buildReportList(provider.reports, apiService), // [FIXED] 传递 apiService
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildDateSelector(
+      BuildContext context, ReportProvider provider) {
+    final dateFormat = DateFormat('yyyy/MM/dd');
+    final range = provider.selectedDateRange ??
+        DateTimeRange(
+          start: DateTime.now().subtract(const Duration(days: 7)),
+          end: DateTime.now(),
+        );
+
+    return Padding(
+      padding: const EdgeInsets.all(12.0),
+      child: InkWell(
+        onTap: () => _selectDateRange(context),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.2),
+                spreadRadius: 1,
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.calendar_today,
+                  color: Colors.blue, size: 20),
+              const SizedBox(width: 12),
+              Text(
+                '${dateFormat.format(range.start)} - ${dateFormat.format(range.end)}',
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.arrow_drop_down, color: Colors.grey),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // [FIXED] 接收 ApiService 参数
+  Widget _buildReportList(List<ReportCase> reports, ApiService apiService) {
+    return ListView.builder(
+      itemCount: reports.length,
+      itemBuilder: (context, index) {
+        final reportCase = reports[index];
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: InkWell(
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ChangeNotifierProvider(
+                    // [FIXED] 将已认证的 apiService 传递给 ReportDetailProvider
+                    create: (_) => ReportDetailProvider(apiService), 
+                    child: ReportDetailScreen(
+                        caseId: reportCase.id.toString()),
+                  ),
+                ),
+              );
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Row(
+                children: [
+                  // Thumbnail
+                  Container(
+                    width: 80,
+                    height: 80,
+                    color: Colors.grey[300],
+                    child: const Icon(Icons.image_not_supported,
+                        color: Colors.grey),
+                  ),
+                  const SizedBox(width: 16),
+                  // Details
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'スコア: ${reportCase.score}',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: reportCase.score < 50
+                                ? Colors.red
+                                : Colors.orange,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Chip(
+                          label: Text(reportCase.equipmentType, // [FIXED] 使用 equipmentType
+                              style: const TextStyle(fontSize: 12)),
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          DateFormat('yyyy-MM-dd HH:mm')
+                              .format(reportCase.eventTime), // [FIXED] 使用 eventTime
+                          style:
+                              const TextStyle(color: Colors.grey, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.arrow_forward_ios, color: Colors.grey),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+api_service.dart:
+import 'package:flutter/material.dart'; // For DateTimeRange
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'dart:io'; // For Platform check AND SocketException
+import 'dart:async'; // For TimeoutException
+import 'dart:developer' as developer; // [NEW] 导入 developer
+
+class ApiService {
+  // !!! 重要: 请再次确认此 URL 完全正确 !!!
+  static const String _renderUrl = 'https://playground-api-32jz.onrender.com/api'; // [USER PROVIDED URL - Please double check!]
+
+  // 本地测试时使用 (Android 模拟器)
+  static const String _localUrl = 'http://10.0.2.2:5000/api';
+
+  // [DEBUG] 确保使用 Render URL
+  static const String baseUrl = _renderUrl;
+
+  final String? _token;
+  ApiService(this._token);
+
+  Map<String, String> get _headers {
+    final headers = {
+      'Content-Type': 'application/json; charset=UTF-8',
+    };
+    if (_token != null) {
+      headers['Authorization'] = 'Bearer $_token';
+    }
+    return headers;
+  }
+
+  dynamic _handleResponse(http.Response response) {
+     // ... (之前的 _handleResponse 代码保持不变) ...
+    // 修复UTF-8编码问题
+    final body = utf8.decode(response.bodyBytes);
+    developer.log('API Response Status: ${response.statusCode}, Body: $body', name: 'ApiService._handleResponse');
+    final jsonResponse = jsonDecode(body);
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      if (jsonResponse is Map && jsonResponse.containsKey('success') && jsonResponse['success'] == true) {
+        return jsonResponse.containsKey('data')
+            ? jsonResponse['data']
+            : jsonResponse as Map<String, dynamic>;
+      } else if (jsonResponse is Map && jsonResponse.containsKey('success') && jsonResponse['success'] == false) {
+         developer.log('API reported error: ${jsonResponse['message']}', name: 'ApiService._handleResponse', error: jsonResponse['message']);
+        throw Exception(jsonResponse['message'] ?? 'API reported an error');
+      } else {
+        return jsonResponse;
+      }
+    } else {
+       developer.log('HTTP error: ${response.statusCode}, Message: ${jsonResponse is Map ? jsonResponse['message'] : body}', name: 'ApiService._handleResponse', error: jsonResponse is Map ? jsonResponse['message'] : body);
+      throw Exception((jsonResponse is Map ? jsonResponse['message'] : body) ?? 'Failed with status code ${response.statusCode}');
+    }
+  }
+
+
+  Future<Map<String, dynamic>> login(String username, String password) async {
+     // ... (login code remains the same) ...
+     developer.log('Sending login request to $baseUrl/auth/login for user: $username', name: 'ApiService.login');
+    try {
+      developer.log('Inside try block, before http.post', name: 'ApiService.login');
+      final response = await http.post(
+        Uri.parse('$baseUrl/auth/login'),
+        headers: {'Content-Type': 'application/json; charset=UTF-8'},
+        body: jsonEncode({
+          'username': username,
+          'password': password,
+        }),
+      ).timeout(const Duration(seconds: 15));
+
+      final body = utf8.decode(response.bodyBytes);
+      developer.log('Login Response Status: ${response.statusCode}, Body: $body', name: 'ApiService.login');
+      final jsonResponse = jsonDecode(body);
+
+      if (response.statusCode == 200 && jsonResponse is Map && jsonResponse['success'] == true) {
+        return jsonResponse as Map<String, dynamic>;
+      } else {
+         final message = (jsonResponse is Map ? jsonResponse['message'] : '未知错误') ?? 'ログインに失敗しました';
+         developer.log('Login failed in ApiService', name: 'ApiService.login', error: message);
+        throw Exception(message);
+      }
+    } on SocketException catch (e, stackTrace) {
+      developer.log('Network Error (SocketException) during login', name: 'ApiService.login', error: e, stackTrace: stackTrace);
+      throw Exception('ネットワーク接続を確認してください: ${e.message}');
+    } on TimeoutException catch (e, stackTrace) {
+      developer.log('Network Error (TimeoutException) during login', name: 'ApiService.login', error: e, stackTrace: stackTrace);
+      throw Exception('サーバーへの接続がタイムアウトしました。');
+    } catch (e, stackTrace) {
+       developer.log('Error during login HTTP call or processing', name: 'ApiService.login', error: e, stackTrace: stackTrace);
+      throw Exception('ネットワークエラーが発生しました: ${e.toString()}');
+    }
+  }
+
+  Future<Map<String, dynamic>> register({
+    required String username,
+    required String password,
+    required String email,
+    required String fullName,
+  }) async {
+    final url = '$baseUrl/auth/register';
+    final body = jsonEncode({
+      'username': username,
+      'password': password,
+      'email': email,
+      'full_name': fullName,
+    });
+    developer.log('Sending register request to $url with body: $body', name: 'ApiService.register');
+
+    try {
+      developer.log('Inside try block, before http.post', name: 'ApiService.register');
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json; charset=UTF-8'},
+        body: body,
+      ).timeout(const Duration(seconds: 15)); // 保持增加的超时时间
+
+      print('✅ Register response received: ${response.statusCode}'); // Use print for immediate visibility
+      final responseBody = utf8.decode(response.bodyBytes);
+      print('📄 Response body: $responseBody'); // Use print for immediate visibility
+      final jsonResponse = jsonDecode(responseBody);
+
+      // [FIXED] Check for 201 Created status code for successful registration
+      if (response.statusCode == 201 && jsonResponse is Map && jsonResponse['success'] == true) {
+        developer.log('Registration successful in ApiService. Returning response.', name: 'ApiService.register');
+        return jsonResponse as Map<String, dynamic>; // 直接返回 Map<String, dynamic>
+      } else {
+        // Handle failure cases (e.g., 409 Conflict, other errors)
+        final message = (jsonResponse is Map ? jsonResponse['message'] : '未知错误') ?? '登録に失敗しました';
+        developer.log('Register failed in ApiService with status ${response.statusCode}', name: 'ApiService.register', error: message);
+        print('❌ Register failed: $message'); // Use print for immediate visibility
+        throw Exception(message); // Throw exception to be caught by AuthProvider
+      }
+    } on TimeoutException catch (e, stackTrace) {
+      developer.log('Timeout error during register', name: 'ApiService.register', error: e, stackTrace: stackTrace);
+      print('❌ TIMEOUT ERROR in register: $e'); // Use print for immediate visibility
+      throw Exception('ネットワークタイムアウトが発生しました');
+    } on SocketException catch (e, stackTrace) {
+      developer.log('Network error during register', name: 'ApiService.register', error: e, stackTrace: stackTrace);
+      print('❌ NETWORK ERROR in register: $e'); // Use print for immediate visibility
+      throw Exception('ネットワークエラーが発生しました: ${e.message}');
+    } on FormatException catch (e, stackTrace) {
+      developer.log('JSON parse error during register', name: 'ApiService.register', error: e, stackTrace: stackTrace);
+       print('❌ JSON PARSE ERROR in register: $e'); // Use print for immediate visibility
+      throw Exception('サーバーからの応答が不正です');
+    } catch (e, stackTrace) {
+      developer.log('Unexpected error during register', name: 'ApiService.register', error: e, stackTrace: stackTrace);
+      print('❌ UNEXPECTED ERROR in register: $e'); // Use print for immediate visibility
+      print('Stack trace: $stackTrace');
+      throw Exception('予期しないエラーが発生しました: ${e.toString()}');
+    }
+  }
+
+
+ // ... (getCameras, getEvents, getEventDetail, submitFeedback, getPeriodicReport) ...
+ // [NOTE] The catch blocks in other methods were also updated to provide better logging
+ // --- 2. 摄像头 (Cameras) ---
+  Future<List<dynamic>> getCameras() async {
+     developer.log('Fetching cameras from $baseUrl/cameras', name: 'ApiService.getCameras');
+    try {
+       developer.log('Inside try block, before http.get', name: 'ApiService.getCameras');
+      final response = await http.get(
+        Uri.parse('$baseUrl/cameras'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 15));
+      return _handleResponse(response);
+    } on SocketException catch (e, stackTrace) {
+      developer.log('Network Error (SocketException) fetching cameras', name: 'ApiService.getCameras', error: e, stackTrace: stackTrace);
+      throw Exception('ネットワーク接続を確認してください: ${e.message}');
+    } on TimeoutException catch (e, stackTrace) {
+      developer.log('Network Error (TimeoutException) fetching cameras', name: 'ApiService.getCameras', error: e, stackTrace: stackTrace);
+      throw Exception('サーバーへの接続がタイムアウトしました。');
+    } catch (e, stackTrace) {
+       developer.log('Error fetching cameras', name: 'ApiService.getCameras', error: e, stackTrace: stackTrace);
+      throw Exception('カメラリストの取得中にエラーが発生しました: ${e.toString()}');
+    }
+  }
+
+  // --- 3. 事件 (Events) ---
+  Future<Map<String, dynamic>> getEvents({DateTimeRange? dateRange, int page = 1, int limit = 20}) async {
+    // ... (queryParams 和 uri 构建) ...
+     final queryParams = {
+      'page': page.toString(),
+      'limit': limit.toString(),
+      if (dateRange != null) ...{
+        'start_date': dateRange.start.toIso8601String().split('T').first,
+        'end_date': dateRange.end.toIso8601String().split('T').first,
+      }
+    };
+    final uri = Uri.parse('$baseUrl/events').replace(queryParameters: queryParams);
+     developer.log('Fetching events from $uri', name: 'ApiService.getEvents');
+
+    try {
+       developer.log('Inside try block, before http.get', name: 'ApiService.getEvents');
+      final response = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 20));
+
+      // ... (response 处理) ...
+      final body = utf8.decode(response.bodyBytes);
+       developer.log('GetEvents Response Status: ${response.statusCode}, Body: $body', name: 'ApiService.getEvents');
+      final jsonResponse = jsonDecode(body);
+
+      if (response.statusCode == 200 && jsonResponse is Map && jsonResponse['success'] == true) {
+        return jsonResponse as Map<String, dynamic>;
+      } else {
+         final message = (jsonResponse is Map ? jsonResponse['message'] : '未知错误') ?? 'イベントの取得に失败しました';
+          developer.log('getEvents failed in ApiService', name: 'ApiService.getEvents', error: message);
+        throw Exception(message);
+      }
+    } on SocketException catch (e, stackTrace) {
+      developer.log('Network Error (SocketException) fetching events', name: 'ApiService.getEvents', error: e, stackTrace: stackTrace);
+      throw Exception('ネットワーク接続を確認してください: ${e.message}');
+    } on TimeoutException catch (e, stackTrace) {
+      developer.log('Network Error (TimeoutException) fetching events', name: 'ApiService.getEvents', error: e, stackTrace: stackTrace);
+      throw Exception('サーバーへの接続がタイムアウトしました。');
+    } catch (e, stackTrace) {
+       developer.log('Error fetching events', name: 'ApiService.getEvents', error: e, stackTrace: stackTrace);
+       throw Exception('イベントの取得中にエラーが発生しました: ${e.toString()}');
+    }
+  }
+
+Future<Map<String, dynamic>> getEventDetail(String eventId) async {
+  print('🔵 Fetching event detail from $baseUrl/events/$eventId'); // 添加日志
+  
+  try {
+    final response = await http.get(
+      Uri.parse('$baseUrl/events/$eventId'),
+      headers: _headers,
+    ).timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        print('⏱️ getEventDetail timeout for eventId: $eventId');
+        throw TimeoutException('Event detail request timeout');
+      },
+    );
+
+    print('✅ getEventDetail response: ${response.statusCode}');
+    print('📄 Response body: ${utf8.decode(response.bodyBytes)}');
+
+    // 手动处理响应，避免 _handleResponse 可能返回 null
+    final body = utf8.decode(response.bodyBytes);
+    final jsonResponse = jsonDecode(body);
+
+    if (response.statusCode == 200 && jsonResponse is Map && jsonResponse['success'] == true) {
+      // 确保返回的是 data 字段，且不为 null
+      final data = jsonResponse['data'];
+      if (data == null) {
+        print('❌ Response data is null');
+        throw Exception('サーバーからデータが返されませんでした');
+      }
+      return data as Map<String, dynamic>;
+    } else {
+      final message = (jsonResponse is Map ? jsonResponse['message'] : '未知错误') ?? 'イベント詳細の取得に失敗しました';
+      print('❌ getEventDetail failed: $message');
+      throw Exception(message);
+    }
+
+  } on TimeoutException catch (e, stackTrace) {
+    print('❌ TIMEOUT ERROR in getEventDetail: $e');
+    developer.log('Timeout error', name: 'ApiService.getEventDetail', error: e, stackTrace: stackTrace);
+    throw Exception('ネットワークタイムアウトが発生しました');
+  } on SocketException catch (e, stackTrace) {
+    print('❌ NETWORK ERROR in getEventDetail: $e');
+    developer.log('Network error', name: 'ApiService.getEventDetail', error: e, stackTrace: stackTrace);
+    throw Exception('ネットワークエラーが発生しました: ${e.message}');
+  } on FormatException catch (e, stackTrace) {
+    print('❌ JSON PARSE ERROR in getEventDetail: $e');
+    developer.log('JSON parse error', name: 'ApiService.getEventDetail', error: e, stackTrace: stackTrace);
+    throw Exception('サーバーからの応答が不正です');
+  } catch (e, stackTrace) {
+    print('❌ UNEXPECTED ERROR in getEventDetail: $e');
+    print('Stack trace: $stackTrace');
+    developer.log('Unexpected error', name: 'ApiService.getEventDetail', error: e, stackTrace: stackTrace);
+    throw Exception('予期しないエラーが発生しました: ${e.toString()}');
+  }
+}
+
+  // --- 4. 反馈 (Feedback) ---
+  Future<Map<String, dynamic>> submitFeedback({required String eventId, required int imageId, required String reason, required String notes}) async {
+    // ... (url 和 body 构建) ...
+     final url = '$baseUrl/feedback';
+     final body = jsonEncode({
+        'event_id': int.tryParse(eventId) ?? 0,
+        'image_id': imageId,
+        'reason': reason,
+        'notes': notes,
+      });
+     developer.log('Submitting feedback to $url with body: $body', name: 'ApiService.submitFeedback');
+
+    try {
+       developer.log('Inside try block, before http.post', name: 'ApiService.submitFeedback');
+      final response = await http.post(Uri.parse(url), headers: _headers, body: body).timeout(const Duration(seconds: 20));
+      return await _handleResponse(response) as Map<String, dynamic>;
+     } on SocketException catch (e, stackTrace) {
+      developer.log('Network Error (SocketException) submitting feedback', name: 'ApiService.submitFeedback', error: e, stackTrace: stackTrace);
+      throw Exception('ネットワーク接続を確認してください: ${e.message}');
+    } on TimeoutException catch (e, stackTrace) {
+      developer.log('Network Error (TimeoutException) submitting feedback', name: 'ApiService.submitFeedback', error: e, stackTrace: stackTrace);
+      throw Exception('サーバーへの接続がタイムアウトしました。');
+    } catch (e, stackTrace) {
+       developer.log('Error submitting feedback', name: 'ApiService.submitFeedback', error: e, stackTrace: stackTrace);
+       throw Exception('フィードバックの送信中にエラーが発生しました: ${e.toString()}');
+    }
+  }
+
+  // --- 5. 定期报告 (Reports) ---
+  Future<Map<String, dynamic>> getPeriodicReport({String type = 'monthly'}) async {
+    // ... (uri 构建) ...
+    final uri = Uri.parse('$baseUrl/reports').replace(queryParameters: {'type': type});
+     developer.log('Fetching periodic report from $uri', name: 'ApiService.getPeriodicReport');
+
+    try {
+       developer.log('Inside try block, before http.get', name: 'ApiService.getPeriodicReport');
+      final response = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 20));
+
+      // ... (response 处理) ...
+       final body = utf8.decode(response.bodyBytes);
+      developer.log('GetPeriodicReport Response Status: ${response.statusCode}, Body: $body', name: 'ApiService.getPeriodicReport');
+      final jsonResponse = jsonDecode(body);
+
+      if (response.statusCode == 200 && jsonResponse is Map && jsonResponse['success'] == true) {
+        return jsonResponse as Map<String, dynamic>;
+      } else {
+         final message = (jsonResponse is Map ? jsonResponse['message'] : '未知错误') ?? 'レポートの取得に失败しました';
+         developer.log('getPeriodicReport failed in ApiService', name: 'ApiService.getPeriodicReport', error: message);
+        throw Exception(message);
+      }
+     } on SocketException catch (e, stackTrace) {
+      developer.log('Network Error (SocketException) fetching periodic report', name: 'ApiService.getPeriodicReport', error: e, stackTrace: stackTrace);
+      throw Exception('ネットワーク接続を確認してください: ${e.message}');
+    } on TimeoutException catch (e, stackTrace) {
+      developer.log('Network Error (TimeoutException) fetching periodic report', name: 'ApiService.getPeriodicReport', error: e, stackTrace: stackTrace);
+      throw Exception('サーバーへの接続がタイムアウトしました。');
+    } catch (e, stackTrace) {
+       developer.log('Error fetching periodic report', name: 'ApiService.getPeriodicReport', error: e, stackTrace: stackTrace);
+       throw Exception('レポートの取得中にエラーが発生しました: ${e.toString()}');
+    }
+  }
+
+}
+
+main.dart:
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'providers/auth_provider.dart';
+import 'services/api_service.dart';
+import 'screens/main_screen.dart';
+import 'screens/login_screen.dart';
+import 'providers/camera_provider.dart';
+// [FIXME] This import is likely causing a conflict, 
+// but we will fix the file 'report_provider.dart' in the next step.
+import 'providers/report_provider.dart';
+
+void main() {
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // MultiProvider setup with ProxyProviders to correctly handle dependencies
+    return MultiProvider(
+      providers: [
+        // 1. AuthProvider (Independent)
+        ChangeNotifierProvider(
+          create: (context) => AuthProvider(),
+        ),
+
+        // 2. ApiService (Depends on AuthProvider's token)
+        ProxyProvider<AuthProvider, ApiService>(
+          update: (context, authProvider, previousApiService) {
+            return ApiService(authProvider.token);
+          },
+        ),
+
+        // 3. CameraProvider (Depends on ApiService)
+        ChangeNotifierProxyProvider<ApiService, CameraProvider>(
+          // [FIXED] Added the required 'create' parameter.
+          // This creates the initial provider instance.
+          create: (context) => CameraProvider(
+            Provider.of<ApiService>(context, listen: false),
+          ),
+          // 'update' rebuilds the provider when ApiService changes (e.g., after login)
+          update: (context, apiService, previousCameraProvider) {
+            return CameraProvider(apiService);
+          },
+        ),
+
+        // 4. ReportProvider (Depends on ApiService)
+        ChangeNotifierProxyProvider<ApiService, ReportProvider>(
+          // [FIXED] Added the required 'create' parameter.
+          create: (context) => ReportProvider(
+            Provider.of<ApiService>(context, listen: false),
+          ),
+          update: (context, apiService, previousReportProvider) {
+            return ReportProvider(apiService);
+          },
+        ),
+      ],
+      child: Consumer<AuthProvider>(
+        builder: (context, auth, _) {
+          return MaterialApp(
+            title: 'Safety Playground App',
+            theme: ThemeData(
+              // ... (rest of your theme data)
+              primaryColor: const Color(0xFF0D6EFD),
+              scaffoldBackgroundColor: const Color(0xFFF8F9FA),
+              // ... (rest of your theme data)
+            ),
+            debugShowCheckedModeBanner: false,
+            // Automatically show LoginScreen or MainScreen based on auth state
+            home: auth.isAuthenticated ? const MainScreen() : const LoginScreen(),
+            routes: {
+              '/login': (context) => const LoginScreen(),
+              '/main': (context) => const MainScreen(),
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+

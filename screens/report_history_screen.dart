@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../providers/report_provider.dart';
-import '../models/report_case.dart';
+import '../models/report_case.dart'; // [MODIFIED] 确保我们使用的是更新后的 report_case.dart
 import 'report_detail_screen.dart';
 import '../providers/report_detail_provider.dart';
-import '../services/api_service.dart'; // [FIX] 导入 ApiService
+import '../services/api_service.dart';
 
 class ReportHistoryScreen extends StatefulWidget {
   const ReportHistoryScreen({super.key});
@@ -18,7 +18,6 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
   @override
   void initState() {
     super.initState();
-    // 画面が初期化された時にデータを取得する
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ReportProvider>().fetchReports();
     });
@@ -32,13 +31,11 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
           end: DateTime.now(),
         );
 
-    // [FIXED] 将 lastDate 设置为明天的开始，以允许选择今天 (10/28) 00:00:00 到 23:59:59 的范围
     final tomorrow = DateTime.now().add(const Duration(days: 1));
     final newRange = await showDateRangePicker(
       context: context,
-      firstDate: DateTime(2024), // A more reasonable start date
-      // [FIXED] lastDate 必须是可选范围的结束点
-      lastDate: DateTime(tomorrow.year, tomorrow.month, tomorrow.day), 
+      firstDate: DateTime(2024),
+      lastDate: DateTime(tomorrow.year, tomorrow.month, tomorrow.day),
       initialDateRange: initialRange,
     );
 
@@ -49,7 +46,6 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // [FIX] 从 context 中获取 ApiService 实例，供 ReportDetailProvider 使用
     final apiService = Provider.of<ApiService>(context, listen: false);
 
     return Consumer<ReportProvider>(
@@ -66,7 +62,7 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
                           ? const Center(
                               child: Text('指定された期間のレポートはありません。',
                                   style: TextStyle(fontSize: 16)))
-                          : _buildReportList(provider.reports, apiService), // [FIXED] 传递 apiService
+                          : _buildReportList(provider.reports, apiService),
             ),
           ],
         );
@@ -74,8 +70,7 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
     );
   }
 
-  Widget _buildDateSelector(
-      BuildContext context, ReportProvider provider) {
+  Widget _buildDateSelector(BuildContext context, ReportProvider provider) {
     final dateFormat = DateFormat('yyyy/MM/dd');
     final range = provider.selectedDateRange ??
         DateTimeRange(
@@ -104,8 +99,7 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.calendar_today,
-                  color: Colors.blue, size: 20),
+              const Icon(Icons.calendar_today, color: Colors.blue, size: 20),
               const SizedBox(width: 12),
               Text(
                 '${dateFormat.format(range.start)} - ${dateFormat.format(range.end)}',
@@ -121,12 +115,14 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
     );
   }
 
-  // [FIXED] 接收 ApiService 参数
   Widget _buildReportList(List<ReportCase> reports, ApiService apiService) {
     return ListView.builder(
       itemCount: reports.length,
       itemBuilder: (context, index) {
         final reportCase = reports[index];
+
+        // [MODIFIED] 移除了所有旧的 debug print
+
         return Card(
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           child: InkWell(
@@ -134,10 +130,8 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
               Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => ChangeNotifierProvider(
-                    // [FIXED] 将已认证的 apiService 传递给 ReportDetailProvider
-                    create: (_) => ReportDetailProvider(apiService), 
-                    child: ReportDetailScreen(
-                        caseId: reportCase.id.toString()),
+                    create: (_) => ReportDetailProvider(apiService),
+                    child: ReportDetailScreen(caseId: reportCase.id.toString()),
                   ),
                 ),
               );
@@ -146,13 +140,39 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
               padding: const EdgeInsets.all(12.0),
               child: Row(
                 children: [
-                  // Thumbnail
+                  // [MODIFIED] 恢复为简洁的缩略图显示
                   Container(
                     width: 80,
                     height: 80,
-                    color: Colors.grey[300],
-                    child: const Icon(Icons.image_not_supported,
-                        color: Colors.grey),
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    // [MODIFIED] 直接使用 reportCase.iconUrl，因为 api.py 和 report_case.dart 都已更新
+                    child: Image.network(
+                      reportCase.iconUrl,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return const Center(
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.broken_image,
+                                color: Colors.red, size: 30),
+                            SizedBox(height: 4),
+                            Text('エラー',
+                                style: TextStyle(
+                                    fontSize: 10, color: Colors.red)),
+                          ],
+                        );
+                      },
+                    ),
                   ),
                   const SizedBox(width: 16),
                   // Details
@@ -172,7 +192,7 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
                         ),
                         const SizedBox(height: 4),
                         Chip(
-                          label: Text(reportCase.equipmentType, // [FIXED] 使用 equipmentType
+                          label: Text(reportCase.equipmentType,
                               style: const TextStyle(fontSize: 12)),
                           padding: const EdgeInsets.symmetric(horizontal: 4),
                           visualDensity: VisualDensity.compact,
@@ -180,7 +200,7 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
                         const SizedBox(height: 4),
                         Text(
                           DateFormat('yyyy-MM-dd HH:mm')
-                              .format(reportCase.eventTime), // [FIXED] 使用 eventTime
+                              .format(reportCase.eventTime),
                           style:
                               const TextStyle(color: Colors.grey, fontSize: 12),
                         ),
@@ -196,4 +216,7 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
       },
     );
   }
+
+  // [REMOVED] 移除了不再需要的 _buildThumbnailWithDebug 方法
 }
+

@@ -238,101 +238,114 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       BuildContext context, ReportDetailProvider provider, String eventId) {
     // ダイアログは自身の状態を管理するため、StatefulBuilder を使用
     showDialog(
-      context: context,
+      context: context, // 这个 context 是 ReportDetailScreen 的 context
       barrierDismissible: provider.feedbackStatus != FeedbackStatus.loading,
-      builder: (BuildContext dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            // Provider の状態をリッスン
-            final status = context.watch<ReportDetailProvider>().feedbackStatus;
+      builder: (BuildContext dialogContext) { // 这个 dialogContext 是 Dialog 自己的新 context
+        // [FIX] 在这里使用 ChangeNotifierProvider.value，
+        // 将 ReportDetailScreen 的 provider 实例 "注入" 到弹窗的 context 中
+        return ChangeNotifierProvider.value(
+          value: provider,
+          child: StatefulBuilder(
+            builder: (context, setDialogState) { // 现在的这个 'context' 可以正确找到 Provider
+              // Provider の状態をリッスン
+              // [FIX] 现在这个 context.watch 可以正常工作了
+              final status = context.watch<ReportDetailProvider>().feedbackStatus;
 
-            if (status == FeedbackStatus.success) {
-              return AlertDialog(
-                title: const Text('フィードバック成功'),
-                content: const Text('フィードバックが正常に送信されました。'),
-                actions: [
-                  TextButton(
-                    child: const Text('確認'),
-                    onPressed: () {
-                      Navigator.of(dialogContext).pop();
-                      // Provider の状態をリセット
-                      context.read<ReportDetailProvider>().resetFeedbackState();
-                    },
-                  ),
-                ],
-              );
-            }
-
-            return AlertDialog(
-              title: const Text('誤検知を報告'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('エラーの種類を選択してください:'),
-                    DropdownButton<String>(
-                      isExpanded: true,
-                      value: provider.selectedReason,
-                      onChanged: (newValue) {
-                        provider.updateSelectedReason(newValue);
-                        // setDialogState は不要 (Provider が更新を通知するため)
-                      },
-                      items: provider.errorReasons
-                          .map<DropdownMenuItem<String>>((String value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value, overflow: TextOverflow.ellipsis),
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      maxLines: 4,
-                      maxLength: 200,
-                      decoration: const InputDecoration(
-                        labelText: '補足情報 (任意)',
-                        border: OutlineInputBorder(),
-                      ),
-                      onChanged: (value) {
-                        provider.updateFeedbackNotes(value);
+              if (status == FeedbackStatus.success) {
+                return AlertDialog(
+                  title: const Text('フィードバック成功'),
+                  content: const Text('フィードバックが正常に送信されました。'),
+                  actions: [
+                    TextButton(
+                      child: const Text('確認'),
+                      onPressed: () {
+                        Navigator.of(dialogContext).pop();
+                        // Provider の状態をリセット
+                        // [FIX] 这里使用 context.read 也没问题了
+                        context.read<ReportDetailProvider>().resetFeedbackState();
                       },
                     ),
                   ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  child: const Text('キャンセル'),
-                  onPressed: status == FeedbackStatus.loading
-                      ? null
-                      : () => Navigator.of(dialogContext).pop(),
-                ),
-                ElevatedButton(
-                  child: status == FeedbackStatus.loading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('送信'),
-                  onPressed: status == FeedbackStatus.loading
-                      ? null
-                      : () {
-                          // [FIX] 必要なパラメータをすべて渡す
-                          final imageId = provider.currentImageIdForFeedback;
-                          if (imageId != null) {
-                            context.read<ReportDetailProvider>().submitFeedback(
-                                  eventId: eventId,
-                                  imageId: imageId,
-                                  reason: provider.selectedReason,
-                                  notes: provider.feedbackNotes,
-                                );
-                          }
+                );
+              }
+
+              return AlertDialog(
+                title: const Text('誤検知を報告'),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('エラーの種類を選択してください:'),
+                      DropdownButton<String>(
+                        isExpanded: true,
+                        // [FIX] 使用 context.watch 来获取最新的 provider 状态
+                        value: context.watch<ReportDetailProvider>().selectedReason,
+                        onChanged: (newValue) {
+                          // [FIX] 使用 context.read 来调用 provider 的方法
+                          context.read<ReportDetailProvider>().updateSelectedReason(newValue);
+                          // setDialogState は不要 (Provider が更新を通知するため)
                         },
+                        items: provider.errorReasons // 'provider' 实例仍然可以通过闭包访问
+                            .map<DropdownMenuItem<String>>((String value) {
+                          return DropdownMenuItem<String>(
+                            value: value,
+                            child: Text(value, overflow: TextOverflow.ellipsis),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        maxLines: 4,
+                        maxLength: 200,
+                        decoration: const InputDecoration(
+                          labelText: '補足情報 (任意)',
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (value) {
+                          // [FIX] 使用 context.read 来调用 provider 的方法
+                          context.read<ReportDetailProvider>().updateFeedbackNotes(value);
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-              ],
-            );
-          },
+                actions: [
+                  TextButton(
+                    child: const Text('キャンセル'),
+                    onPressed: status == FeedbackStatus.loading
+                        ? null
+                        : () => Navigator.of(dialogContext).pop(),
+                  ),
+                  ElevatedButton(
+                    child: status == FeedbackStatus.loading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Text('送信'),
+                    onPressed: status == FeedbackStatus.loading
+                        ? null
+                        : () {
+                            // [FIX] 必要なパラメータをすべて渡す
+                            // [FIX] 使用 context.read 来获取 provider
+                            final provider = context.read<ReportDetailProvider>();
+                            final imageId = provider.currentImageIdForFeedback;
+                            
+                            if (imageId != null) {
+                              provider.submitFeedback(
+                                eventId: eventId,
+                                imageId: imageId,
+                                reason: provider.selectedReason,
+                                notes: provider.feedbackNotes,
+                              );
+                            }
+                          },
+                  ),
+                ],
+              );
+            },
+          ),
         );
       },
     );
