@@ -18,7 +18,7 @@ A Flutter/Dart Android app for playground monitoring. This README contains a con
 
 ## Overview
 
-This guide helps Android developers simulate the production environment locally so the app can load HLS video files and analysis images produced by the AI analysis script (e.g. `live_analysis_ngrok.py`). The script saves files to a shared folder which must be served over HTTP and exposed to the internet using ngrok.
+This guide helps Android developers simulate the production environment locally so the app can load HLS video files and analysis images produced by the AI analysis script (e.g. `live_analysis_mmpose.py`). The script saves files to a shared folder which must be served over HTTP and exposed to the internet using ngrok.
 
 ## Prerequisites
 
