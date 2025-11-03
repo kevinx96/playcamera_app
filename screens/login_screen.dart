@@ -170,6 +170,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ],
                 ),
+                // [MODIFIED] 忘记密码提示
+                const SizedBox(height: 20),
+                Text(
+                  'もしパスワードを忘れた場合は、サーバー管理者にご連絡ください。',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 12,
+                  ),
+                ),
               ],
             ),
           ),
@@ -178,4 +188,3 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
-

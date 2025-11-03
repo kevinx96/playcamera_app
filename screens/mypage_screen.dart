@@ -3,6 +3,12 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import 'login_screen.dart';
 import 'periodic_report_screen.dart'; 
+// [NEW] 导入新的页面
+import 'terms_screen.dart';
+import 'privacy_policy_screen.dart';
+// [NEW] 导入上一轮添加的 account_update_screen
+import 'account_update_screen.dart';
+
 
 class MypageScreen extends StatelessWidget {
   const MypageScreen({super.key});
@@ -35,24 +41,19 @@ class MypageScreen extends StatelessWidget {
                   _buildOptionCard(
                     context,
                     options: [
+                      // [MODIFIED] 整合为一个按钮
                       _buildListTile(
                         context,
-                        icon: Icons.person_outline,
-                        title: 'プロフィール編集',
-                        onTap: () {},
+                        icon: Icons.manage_accounts_outlined,
+                        title: 'アカウント情報変更',
+                        onTap: () {
+                          Navigator.of(context).push(MaterialPageRoute(
+                            // 导航到上一轮创建的页面
+                            builder: (_) => const AccountUpdateScreen(),
+                          ));
+                        },
                       ),
-                      _buildListTile(
-                        context,
-                        icon: Icons.lock_outline,
-                        title: 'パスワード変更',
-                        onTap: () {},
-                      ),
-                      _buildListTile(
-                        context,
-                        icon: Icons.email_outlined,
-                        title: 'メールアドレス変更',
-                        onTap: () {},
-                      ),
+                      // [REMOVED] 移除了“メールアドレス変更”按钮
                     ],
                   ),
                   const SizedBox(height: 24),
@@ -60,7 +61,7 @@ class MypageScreen extends StatelessWidget {
                   _buildOptionCard(
                     context,
                     options: [
-                      _buildListTile( // [ADDED] Start
+                      _buildListTile( 
                         context,
                         icon: Icons.bar_chart_outlined,
                         title: '定期レポート',
@@ -69,7 +70,7 @@ class MypageScreen extends StatelessWidget {
                             builder: (_) => const PeriodicReportScreen(),
                           ));
                         },
-                      ), // [ADDED] End
+                      ), 
                       _buildListTile(
                         context,
                         icon: Icons.help_outline,
@@ -80,13 +81,23 @@ class MypageScreen extends StatelessWidget {
                         context,
                         icon: Icons.description_outlined,
                         title: '利用規約',
-                        onTap: () {},
+                        // [MODIFIED] 添加导航
+                        onTap: () {
+                          Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => const TermsScreen(),
+                          ));
+                        },
                       ),
                       _buildListTile(
                         context,
                         icon: Icons.privacy_tip_outlined,
                         title: 'プライバシーポリシー',
-                        onTap: () {},
+                        // [MODIFIED] 添加导航
+                        onTap: () {
+                           Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => const PrivacyPolicyScreen(),
+                          ));
+                        },
                       ),
                       _buildListTile(
                         context,
