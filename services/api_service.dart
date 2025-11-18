@@ -1,9 +1,9 @@
-import 'package:flutter/material.dart'; // For DateTimeRange
+import 'package:flutter/material.dart'; 
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'dart:io'; // For Platform check AND SocketException
-import 'dart:async'; // For TimeoutException
-import 'dart:developer' as developer; 
+import 'dart:io'; 
+import 'dart:async'; 
+import 'dart:developer' as developer;
 
 class ApiService {
   static const String _renderUrl = 'https://playground-api-32jz.onrender.com/api';
@@ -15,8 +15,7 @@ class ApiService {
 
   Map<String, String> get _headers {
     final headers = {
-      // [FIXED] 修正了编码拼写错误 (UTF-CH -> UTF-8)
-      'Content-Type': 'application/json; charset=UTF-8', 
+      'Content-Type': 'application/json; charset=UTF-8',
     };
     if (_token != null) {
       headers['Authorization'] = 'Bearer $_token';
@@ -49,11 +48,9 @@ class ApiService {
   Future<Map<String, dynamic>> login(String username, String password) async {
      developer.log('Sending login request to $baseUrl/auth/login for user: $username', name: 'ApiService.login');
     try {
-      developer.log('Inside try block, before http.post', name: 'ApiService.login');
       final response = await http.post(
         Uri.parse('$baseUrl/auth/login'),
-        // [FIXED] 登录时不应使用 _headers (因为还没有 token)
-        headers: {'Content-Type': 'application/json; charset=UTF-8'}, 
+        headers: {'Content-Type': 'application/json; charset=UTF-8'},
         body: jsonEncode({
           'username': username,
           'password': password,
@@ -99,11 +96,9 @@ class ApiService {
     developer.log('Sending register request to $url with body: $body', name: 'ApiService.register');
 
     try {
-      developer.log('Inside try block, before http.post', name: 'ApiService.register');
       final response = await http.post(
         Uri.parse(url),
-        // [FIXED] 注册时不应使用 _headers (因为还没有 token)
-        headers: {'Content-Type': 'application/json; charset=UTF-8'}, 
+        headers: {'Content-Type': 'application/json; charset=UTF-8'},
         body: body,
       ).timeout(const Duration(seconds: 15)); 
 
@@ -141,7 +136,6 @@ class ApiService {
     }
   }
 
-  // [NEW] アカウント情報更新メソッド
   Future<Map<String, dynamic>> updateAccount({
     required String currentUsername,
     required String currentEmail,
@@ -185,12 +179,38 @@ class ApiService {
     }
   }
 
+  // [NEW] 注册 FCM 设备令牌
+  Future<Map<String, dynamic>> registerDeviceToken(String token) async {
+    final url = '$baseUrl/account/register-device';
+    final body = jsonEncode({'device_token': token});
+    developer.log('Registering FCM device token to $url', name: 'ApiService.registerDeviceToken');
+
+    try {
+      final response = await http.post(
+        Uri.parse(url),
+        headers: _headers, // 必须包含认证
+        body: body,
+      ).timeout(const Duration(seconds: 15));
+      
+      return _handleResponse(response) as Map<String, dynamic>;
+
+    } on SocketException catch (e, stackTrace) {
+      developer.log('Network Error (SocketException) registering device', name: 'ApiService.registerDeviceToken', error: e, stackTrace: stackTrace);
+      throw Exception('ネットワーク接続を確認してください: ${e.message}');
+    } on TimeoutException catch (e, stackTrace) {
+      developer.log('Network Error (TimeoutException) registering device', name: 'ApiService.registerDeviceToken', error: e, stackTrace: stackTrace);
+      throw Exception('サーバーへの接続がタイムアウトしました。');
+    } catch (e, stackTrace) {
+       developer.log('Error registering device token', name: 'ApiService.registerDeviceToken', error: e, stackTrace: stackTrace);
+       throw Exception('デバイスの登録に失敗しました: ${e.toString()}');
+    }
+  }
+
 
   // --- 2. 摄像头 (Cameras) ---
   Future<List<dynamic>> getCameras() async {
      developer.log('Fetching cameras from $baseUrl/cameras', name: 'ApiService.getCameras');
     try {
-       developer.log('Inside try block, before http.get', name: 'ApiService.getCameras');
       final response = await http.get(
         Uri.parse('$baseUrl/cameras'),
         headers: _headers,
@@ -249,7 +269,6 @@ class ApiService {
      developer.log('Fetching events from $uri', name: 'ApiService.getEvents');
 
     try {
-       developer.log('Inside try block, before http.get', name: 'ApiService.getEvents');
       final response = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 20));
       final body = utf8.decode(response.bodyBytes);
        developer.log('GetEvents Response Status: ${response.statusCode}, Body: $body', name: 'ApiService.getEvents');
@@ -340,7 +359,6 @@ Future<Map<String, dynamic>> getEventDetail(String eventId) async {
      developer.log('Submitting feedback to $url with body: $body', name: 'ApiService.submitFeedback');
 
     try {
-       developer.log('Inside try block, before http.post', name: 'ApiService.submitFeedback');
       final response = await http.post(Uri.parse(url), headers: _headers, body: body).timeout(const Duration(seconds: 20));
       return await _handleResponse(response) as Map<String, dynamic>;
      } on SocketException catch (e, stackTrace) {
@@ -361,7 +379,6 @@ Future<Map<String, dynamic>> getEventDetail(String eventId) async {
      developer.log('Fetching periodic report from $uri', name: 'ApiService.getPeriodicReport');
 
     try {
-       developer.log('Inside try block, before http.get', name: 'ApiService.getPeriodicReport');
       final response = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 20));
        final body = utf8.decode(response.bodyBytes);
       developer.log('GetPeriodicReport Response Status: ${response.statusCode}, Body: $body', name: 'ApiService.getPeriodicReport');
@@ -386,4 +403,3 @@ Future<Map<String, dynamic>> getEventDetail(String eventId) async {
     }
   }
 }
-
